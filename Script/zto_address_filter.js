@@ -1,3 +1,14 @@
+// 兼容 Loon 与 Quantumult X 通知环境
+if (typeof $notify === "undefined") {
+    var $notify = function(title, subtitle, body) {
+        if (typeof $notification !== "undefined" && $notification.post) {
+            $notification.post(title, subtitle, body);
+        } else {
+            console.log("[通知] " + title + " | " + subtitle + "\n" + body);
+        }
+    };
+}
+
 // 简化稳定版 - 中通监控
 // 关键词列表 - 每行一个词，支持注释（以#开头的行）
 // 只保留包含这些关键词的地址，其他全部移除
@@ -231,12 +242,16 @@ try {
         }
     }
     
-    // 发送通知
-    if (keptBills.length > 0 || originalCount > 0) {
-        $notify("中通监控 - 关键词过滤", `保留:${keptBills.length}条 | 移除:${removedBills.length}条`, notificationText.trim());
-        console.log("✅ 通知发送成功");
-    } else {
-        console.log("ℹ️ 无数据，不发送通知");
+    // 发送通知 (加容错保护，避免通知接口异常中断数据返回)
+    try {
+        if (keptBills.length > 0 || originalCount > 0) {
+            $notify("中通监控 - 关键词过滤", `保留:${keptBills.length}条 | 移除:${removedBills.length}条`, notificationText.trim());
+            console.log("✅ 通知发送成功");
+        } else {
+            console.log("ℹ️ 无数据，不发送通知");
+        }
+    } catch (notifyErr) {
+        console.log("⚠️ 发送通知异常 (不影响数据过滤): " + notifyErr);
     }
     
     // 返回修改后的响应 - 只包含有关键词的数据
