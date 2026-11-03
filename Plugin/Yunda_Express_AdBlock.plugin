@@ -1,0 +1,47 @@
+#!name = 韵达超市/韵镖侠去广告
+#!desc = 过滤韵达超市、韵镖侠 App 开屏广告、弹窗推广及内嵌的穿山甲、快手、腾讯优量汇、贝梓移动等第三方广告联盟 SDK。
+#!openUrl = https://github.com/tlsftlsftlsf/Loon-Plugins
+#!author = tlsftlsftlsf
+#!tag = 去广告, 韵达超市, 韵镖侠, 快递
+#!icon = https://gitlab.com/lodepuly/iconlibrary/-/raw/master/Other_icon/120px/AdGuard.png
+#!date = 2026-11-03 10:45:00
+
+[Rule]
+# ==================== 穿山甲广告联盟 (Pangolin / Pangle) ====================
+DOMAIN-KEYWORD,pangolin-sdk-toutiao,REJECT
+DOMAIN-SUFFIX,pglstatp-toutiao.com,REJECT
+DOMAIN,toblog.ctobsnssdk.com,REJECT
+DOMAIN,lf-cdn-tos.bytescm.com,REJECT
+DOMAIN,webcast-open.douyin.com,REJECT
+DOMAIN,vod-license-m.volccdn.com,REJECT
+DOMAIN,apmplus.volces.com,REJECT
+
+# ==================== 快手联盟广告 (KSAD) ====================
+DOMAIN,open.e.kuaishou.com,REJECT
+DOMAIN,open.e.kuaishou.cn,REJECT
+DOMAIN-SUFFIX,adkwai.com,REJECT
+DOMAIN-SUFFIX,adukwai.com,REJECT
+DOMAIN,gdfp.gifshow.com,REJECT
+
+# ==================== 贝梓广告联盟 (BeiZi & HubCloud) ====================
+DOMAIN-SUFFIX,beizi.biz,REJECT
+DOMAIN-SUFFIX,hubcloud.com.cn,REJECT
+
+# ==================== 腾讯优量汇广告 (Tencent GDT) ====================
+DOMAIN,mi.gdt.qq.com,REJECT
+DOMAIN,win.gdt.qq.com,REJECT
+DOMAIN,sdk.e.qq.com,REJECT
+DOMAIN,pgdt.ugdtimg.com,REJECT
+DOMAIN,tdid.m.qq.com,REJECT
+
+# ==================== 百度百意 / Sofire 广告打点 ====================
+DOMAIN,sofire.baidu.com,REJECT
+
+# ==================== 阿里 Tanx ====================
+DOMAIN,ef-dongfeng.tanx.com,REJECT
+DOMAIN,et.tanx.com,REJECT
+
+# ==================== 广告追踪与埋点统计 ====================
+DOMAIN,bda.yundasys.com,REJECT
+DOMAIN,cnlogs.umeng.com,REJECT
+DOMAIN,utoken.umeng.com,REJECT

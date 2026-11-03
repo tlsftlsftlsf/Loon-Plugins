@@ -1,0 +1,38 @@
+# ==================== 穿山甲广告联盟 (Pangolin / Pangle) ====================
+DOMAIN-KEYWORD,pangolin-sdk-toutiao
+DOMAIN-SUFFIX,pglstatp-toutiao.com
+DOMAIN,toblog.ctobsnssdk.com
+DOMAIN,lf-cdn-tos.bytescm.com
+DOMAIN,webcast-open.douyin.com
+DOMAIN,vod-license-m.volccdn.com
+DOMAIN,apmplus.volces.com
+
+# ==================== 快手联盟广告 (KSAD) ====================
+DOMAIN,open.e.kuaishou.com
+DOMAIN,open.e.kuaishou.cn
+DOMAIN-SUFFIX,adkwai.com
+DOMAIN-SUFFIX,adukwai.com
+DOMAIN,gdfp.gifshow.com
+
+# ==================== 贝梓广告联盟 (BeiZi & HubCloud) ====================
+DOMAIN-SUFFIX,beizi.biz
+DOMAIN-SUFFIX,hubcloud.com.cn
+
+# ==================== 腾讯优量汇广告 (Tencent GDT) ====================
+DOMAIN,mi.gdt.qq.com
+DOMAIN,win.gdt.qq.com
+DOMAIN,sdk.e.qq.com
+DOMAIN,pgdt.ugdtimg.com
+DOMAIN,tdid.m.qq.com
+
+# ==================== 百度百意 / Sofire 广告打点 ====================
+DOMAIN,sofire.baidu.com
+
+# ==================== 阿里 Tanx ====================
+DOMAIN,ef-dongfeng.tanx.com
+DOMAIN,et.tanx.com
+
+# ==================== 广告追踪与埋点统计 ====================
+DOMAIN,bda.yundasys.com
+DOMAIN,cnlogs.umeng.com
+DOMAIN,utoken.umeng.com
