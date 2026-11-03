@@ -1,0 +1,13 @@
+#!name = 喜鸟提取收件人手机号
+#!desc = 拦截喜鸟运单收件人手机号接口 (receiverPhone)，自动弹出通知，点击通知直接将手机号复制到剪贴板。
+#!openUrl = https://github.com/tlsftlsftlsf/Loon-Plugins
+#!author = tlsftlsftlsf
+#!tag = 喜鸟, 快递工具, 剪贴板
+#!icon = https://gitlab.com/lodepuly/iconlibrary/-/raw/master/Other_icon/120px/AliPay.png
+#!date = 2026-11-03 18:10:00
+
+[Script]
+http-response ^https:\/\/gateway\.56xiniao\.com\/app\/practice\/app\/waybill\/receiverPhone script-path=https://raw.githubusercontent.com/tlsftlsftlsf/Loon-Plugins/main/Script/xiniao_receiver_phone.js, requires-body=true, tag=喜鸟提取手机号
+
+[Mitm]
+hostname = gateway.56xiniao.com
