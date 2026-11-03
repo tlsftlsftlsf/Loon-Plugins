@@ -1,0 +1,75 @@
+#!name = 儿童手表及联盟去广告 (小寻 & 360儿童卫士)
+#!desc = 过滤小寻、360儿童卫士 App 开屏广告、自建广告位及内嵌的穿山甲、优量汇、快手、百度百意等多家广告联盟 SDK。
+#!openUrl = https://github.com/tlsftlsftlsf/Loon-Plugins
+#!author = tlsftlsftlsf
+#!tag = 去广告, 小寻, 360儿童卫士
+#!icon = https://gitlab.com/lodepuly/iconlibrary/-/raw/master/Other_icon/120px/AdGuard.png
+#!date = 2026-11-03 10:38:00
+
+[Rule]
+# ==================== 小寻 (XiaoXun) 自建广告与埋点 ====================
+# 仅拦截广告与打点，不影响手表正常定位、通话、健康与绑定业务
+URL-REGEX,^https?:\/\/xunapi\.xunkids\.com\/xunkids\/adservice,REJECT
+URL-REGEX,^https?:\/\/xunsapp\.xunkids\.com\/burialPoint,REJECT
+
+# ==================== 360 商业化广告与统计 ====================
+DOMAIN,ad.iot.360.cn,REJECT
+DOMAIN,hye.comp.360os.com,REJECT
+DOMAIN,cmt.comp.360os.com,REJECT
+DOMAIN,track.360os.com,REJECT
+
+# ==================== 穿山甲广告联盟 (Pangolin / Pangle) ====================
+DOMAIN-KEYWORD,pangolin-sdk-toutiao,REJECT
+DOMAIN-SUFFIX,pglstatp-toutiao.com,REJECT
+DOMAIN,toblog.ctobsnssdk.com,REJECT
+
+# ==================== 快手联盟广告 (KSAD) ====================
+DOMAIN,open.e.kuaishou.com,REJECT
+DOMAIN,open.e.kuaishou.cn,REJECT
+DOMAIN-SUFFIX,adkwai.com,REJECT
+DOMAIN,gdfp.gifshow.com,REJECT
+
+# ==================== 腾讯优量汇广告 (Tencent GDT) ====================
+DOMAIN,mi.gdt.qq.com,REJECT
+DOMAIN,win.gdt.qq.com,REJECT
+DOMAIN,sdk.e.qq.com,REJECT
+DOMAIN,pgdt.ugdtimg.com,REJECT
+DOMAIN,adsmind.ugdtimg.com,REJECT
+DOMAIN,qzs.gdtimg.com,REJECT
+
+# ==================== 百度百意 / 移动联盟广告 ====================
+DOMAIN,mobads.baidu.com,REJECT
+DOMAIN,mobads-pre-config.cdn.bcebos.com,REJECT
+DOMAIN,wn.pos.baidu.com,REJECT
+DOMAIN,als.baidu.com,REJECT
+DOMAIN,sofire.baidu.com,REJECT
+DOMAIN,feed-image.baidu.com,REJECT
+
+# ==================== 贝梓广告 (BeiZi SDK) ====================
+DOMAIN-SUFFIX,beizi.biz,REJECT
+
+# ==================== 易帆广告 (YFan Ads) ====================
+DOMAIN-SUFFIX,yfanads.com,REJECT
+
+# ==================== TopOn / AnyThink 聚合平台 ====================
+DOMAIN-SUFFIX,anythinktech.com,REJECT
+
+# ==================== 章鱼移动广告 (ZhangYu) ====================
+DOMAIN-SUFFIX,zhangyuyidong.cn,REJECT
+
+# ==================== 一酷 (1RTB) ====================
+DOMAIN-SUFFIX,1rtb.net,REJECT
+DOMAIN-SUFFIX,1rtb.com,REJECT
+
+# ==================== 京东广告 (JD Ads) ====================
+DOMAIN,dsp-x.jd.com,REJECT
+DOMAIN,janapi.jd.com,REJECT
+
+# ==================== 阿里 Tanx ====================
+DOMAIN,et.tanx.com,REJECT
+DOMAIN,ef-dongfeng.tanx.com,REJECT
+
+# ==================== 其他广告与统计跟踪 ====================
+DOMAIN,v.adintl.cn,REJECT
+DOMAIN,da.statisticslinks.com,REJECT
+DOMAIN,res1.hubcloud.com.cn,REJECT

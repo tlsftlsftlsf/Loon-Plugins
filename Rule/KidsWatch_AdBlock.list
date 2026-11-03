@@ -1,0 +1,65 @@
+# ==================== 小寻 (XiaoXun) 自建广告与埋点 ====================
+URL-REGEX,^https?:\/\/xunapi\.xunkids\.com\/xunkids\/adservice
+URL-REGEX,^https?:\/\/xunsapp\.xunkids\.com\/burialPoint
+
+# ==================== 360 商业化广告与统计 ====================
+DOMAIN,ad.iot.360.cn
+DOMAIN,hye.comp.360os.com
+DOMAIN,cmt.comp.360os.com
+DOMAIN,track.360os.com
+
+# ==================== 穿山甲广告联盟 (Pangolin / Pangle) ====================
+DOMAIN-KEYWORD,pangolin-sdk-toutiao
+DOMAIN-SUFFIX,pglstatp-toutiao.com
+DOMAIN,toblog.ctobsnssdk.com
+
+# ==================== 快手联盟广告 (KSAD) ====================
+DOMAIN,open.e.kuaishou.com
+DOMAIN,open.e.kuaishou.cn
+DOMAIN-SUFFIX,adkwai.com
+DOMAIN,gdfp.gifshow.com
+
+# ==================== 腾讯优量汇广告 (Tencent GDT) ====================
+DOMAIN,mi.gdt.qq.com
+DOMAIN,win.gdt.qq.com
+DOMAIN,sdk.e.qq.com
+DOMAIN,pgdt.ugdtimg.com
+DOMAIN,adsmind.ugdtimg.com
+DOMAIN,qzs.gdtimg.com
+
+# ==================== 百度百意 / 移动联盟广告 ====================
+DOMAIN,mobads.baidu.com
+DOMAIN,mobads-pre-config.cdn.bcebos.com
+DOMAIN,wn.pos.baidu.com
+DOMAIN,als.baidu.com
+DOMAIN,sofire.baidu.com
+DOMAIN,feed-image.baidu.com
+
+# ==================== 贝梓广告 (BeiZi SDK) ====================
+DOMAIN-SUFFIX,beizi.biz
+
+# ==================== 易帆广告 (YFan Ads) ====================
+DOMAIN-SUFFIX,yfanads.com
+
+# ==================== TopOn / AnyThink 聚合平台 ====================
+DOMAIN-SUFFIX,anythinktech.com
+
+# ==================== 章鱼移动广告 (ZhangYu) ====================
+DOMAIN-SUFFIX,zhangyuyidong.cn
+
+# ==================== 一酷 (1RTB) ====================
+DOMAIN-SUFFIX,1rtb.net
+DOMAIN-SUFFIX,1rtb.com
+
+# ==================== 京东广告 (JD Ads) ====================
+DOMAIN,dsp-x.jd.com
+DOMAIN,janapi.jd.com
+
+# ==================== 阿里 Tanx ====================
+DOMAIN,et.tanx.com
+DOMAIN,ef-dongfeng.tanx.com
+
+# ==================== 其他广告与统计跟踪 ====================
+DOMAIN,v.adintl.cn
+DOMAIN,da.statisticslinks.com
+DOMAIN,res1.hubcloud.com.cn
