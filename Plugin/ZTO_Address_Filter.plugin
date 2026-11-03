@@ -1,0 +1,13 @@
+#!name = 中通未派件地址关键词过滤
+#!desc = 拦截中通掌中通接口 (NOT_DISPATCH_DETAIL_BUILD_LIST)，按关键词自动筛选并过滤派件地址，弹窗通知保留和移除明细。
+#!openUrl = https://github.com/tlsftlsftlsf/Loon-Plugins
+#!author = tlsftlsftlsf
+#!tag = 中通, 快递工具, 地址筛选
+#!icon = https://gitlab.com/lodepuly/iconlibrary/-/raw/master/Other_icon/120px/ZTO.png
+#!date = 2026-11-03 17:58:00
+
+[Script]
+http-response ^https?:\/\/zztgateway\.zt-express\.com\/NOT_DISPATCH_DETAIL_BUILD_LIST script-path=https://raw.githubusercontent.com/tlsftlsftlsf/Loon-Plugins/main/Script/zto_address_filter.js, requires-body=true, tag=中通未派件筛选
+
+[Mitm]
+hostname = zztgateway.zt-express.com
