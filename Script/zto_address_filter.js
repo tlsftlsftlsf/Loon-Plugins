@@ -9,6 +9,87 @@ if (typeof $notify === "undefined") {
     };
 }
 
+// ====== 推送与通知配置 ======
+const BARK_KEY = "BApQ6cMJmhpRwiWGQJmJJj"; // Bark 设备 Key
+const ENABLE_BARK = true;                  // 是否启用 Bark 推送
+const BARK_GROUP = "中通监控";              // Bark 消息分组
+const BARK_TTL = 600;                      // 消息缓存时间(秒)
+const ENABLE_LOON_NOTIFY = false;          // 是否启用 Loon 本地通知 (默认关闭)
+
+// 发送 Bark 推送通知 (兼容 Loon 与 Quantumult X)
+function sendBarkNotification(title, content, copyText, callback) {
+    if (!ENABLE_BARK || !BARK_KEY) {
+        if (callback) callback();
+        return;
+    }
+    
+    let finished = false;
+    let timer = null;
+    
+    function doneCallback() {
+        if (!finished) {
+            finished = true;
+            if (timer) clearTimeout(timer);
+            if (callback) callback();
+        }
+    }
+    
+    try {
+        timer = setTimeout(function() {
+            console.log("⚠️ Bark 推送等待超时 (1.5s)，放行响应");
+            doneCallback();
+        }, 1500);
+    } catch (e) {
+        // 环境不支持 setTimeout 时忽略
+    }
+    
+    const postData = {
+        title: title,
+        body: content,
+        group: BARK_GROUP,
+        copy: copyText || "",
+        icon: "https://gitlab.com/lodepuly/iconlibrary/-/raw/master/Other_icon/120px/ZTO.png"
+    };
+    if (BARK_TTL) {
+        postData.ttl = BARK_TTL;
+    }
+
+    if (typeof $httpClient !== "undefined" && $httpClient.post) {
+        $httpClient.post({
+            url: "https://api.day.app/" + BARK_KEY,
+            headers: {
+                "Content-Type": "application/json; charset=utf-8"
+            },
+            body: JSON.stringify(postData)
+        }, function(error, response, data) {
+            if (error) {
+                console.log("❌ Bark 推送失败: " + error);
+            } else {
+                console.log("✅ Bark 推送成功");
+            }
+            doneCallback();
+        });
+    } else if (typeof $task !== "undefined" && $task.fetch) {
+        $task.fetch({
+            url: "https://api.day.app/" + BARK_KEY,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json; charset=utf-8"
+            },
+            body: JSON.stringify(postData)
+        }).then(function(response) {
+            console.log("✅ Bark 推送成功");
+            doneCallback();
+        }, function(reason) {
+            console.log("❌ Bark 推送失败: " + (reason && reason.error ? reason.error : reason));
+            doneCallback();
+        });
+    } else {
+        console.log("⚠️ 当前环境不支持网络请求");
+        doneCallback();
+    }
+}
+
 // 辅助函数：安全获取包裹重量
 function getBillWeight(item) {
     if (!item) return 0;
@@ -290,20 +371,32 @@ try {
     }
     clipText += `【全部保留单号】\n` + keptBills.map(b => b.billCode).join('\n');
     
-    // 发送通知 (加容错保护，避免通知接口异常中断数据返回)
-    try {
-        if (keptBills.length > 0 || originalCount > 0) {
-            const maxWt = heavyKeptBills.length > 0 ? `最大${formatWeight(heavyKeptBills[0])}` : "无大件";
-            const subTitle = `重件:${heavyKeptBills.length}条(${maxWt}) | 保留:${keptBills.length} | 移除:${removedBills.length}`;
-            $notify("中通监控 - 关键词过滤", subTitle, notificationText.trim(), {
-                clipboard: clipText.trim()
-            });
-            console.log("✅ 通知发送成功");
-        } else {
-            console.log("ℹ️ 无数据，不发送通知");
+    // 构建 Bark 标题：醒目提示移除数量与重件数量
+    let barkTitle = "中通监控";
+    if (removedBills.length > 0) {
+        barkTitle += ` - ⚠️移除:${removedBills.length}件`;
+    }
+    if (heavyKeptBills.length > 0) {
+        barkTitle += ` ⚖️重件:${heavyKeptBills.length}件`;
+    }
+    barkTitle += ` (保留:${keptBills.length}件)`;
+
+    // 1. Loon 本地通知 (根据配置决定是否发送)
+    if (ENABLE_LOON_NOTIFY) {
+        try {
+            if (keptBills.length > 0 || originalCount > 0) {
+                const maxWt = heavyKeptBills.length > 0 ? `最大${formatWeight(heavyKeptBills[0])}` : "无大件";
+                const subTitle = `重件:${heavyKeptBills.length}条(${maxWt}) | 保留:${keptBills.length} | 移除:${removedBills.length}`;
+                $notify("中通监控 - 关键词过滤", subTitle, notificationText.trim(), {
+                    clipboard: clipText.trim()
+                });
+                console.log("✅ Loon 本地通知发送成功");
+            }
+        } catch (notifyErr) {
+            console.log("⚠️ Loon 本地通知异常 (不影响数据过滤): " + notifyErr);
         }
-    } catch (notifyErr) {
-        console.log("⚠️ 发送通知异常 (不影响数据过滤): " + notifyErr);
+    } else {
+        console.log("ℹ️ Loon 本地通知已关闭 (优先使用 Bark 推送)");
     }
     
     // 详细请求体移至末尾打印，避免干扰顶部的包裹日志视线
@@ -313,9 +406,17 @@ try {
         console.log("=== 详细请求体结束 ===");
     }
     
-    // 返回修改后的响应 - 只包含有关键词的数据
-    console.log(`✅ 返回过滤后的数据: ${keptBills.length}条`);
-    $done({ body: JSON.stringify(data) });
+    // 2. Bark 推送并返回响应数据
+    if (ENABLE_BARK && (keptBills.length > 0 || originalCount > 0)) {
+        console.log("正在发送 Bark 推送...");
+        sendBarkNotification(barkTitle, notificationText.trim(), clipText.trim(), function() {
+            console.log(`✅ 返回过滤后的数据: ${keptBills.length}条`);
+            $done({ body: JSON.stringify(data) });
+        });
+    } else {
+        console.log(`✅ 返回过滤后的数据: ${keptBills.length}条`);
+        $done({ body: JSON.stringify(data) });
+    }
     
 } catch (error) {
     console.log("❌ 脚本执行错误: " + error);
