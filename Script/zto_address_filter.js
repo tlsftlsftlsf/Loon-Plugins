@@ -149,12 +149,9 @@ try {
         try {
             decodedBody = decodeURIComponent(body);
             requestBodyDisplay = decodedBody;
-            console.log("=== 解码后请求体 ===");
-            console.log(decodedBody);
-            console.log("=== 解码后结束 ===");
         } catch (e) {
-            console.log("URL解码失败，使用原始body");
             requestBodyDisplay = body;
+            decodedBody = body;
         }
         
         // 多种方式检测arriveNotDispatchFlag
@@ -221,11 +218,15 @@ try {
     
     // 控制台输出详细列表 (包含详细信息，方便在 Loon 脚本日志中随时核对)
     if (heavyKeptBills.length > 0) {
-        console.log("=== 保留重件(>3kg，由重到轻)清单 ===");
+        console.log("=== ⚖️ 保留重件(>3kg，由重到轻)清单 ===");
         heavyKeptBills.forEach((b, i) => console.log(`${i + 1}. 重量:${formatWeight(b)} 单号:${b.billCode || '无'} 地址:${b.receiveAddress || '无'}`));
     }
+    if (keptBills.length > 0) {
+        console.log(`=== ✅ 全部保留包裹清单 (${keptBills.length}条) ===`);
+        keptBills.forEach((b, i) => console.log(`${i + 1}. 重量:${formatWeight(b)} 单号:${b.billCode || '无'} 地址:${b.receiveAddress || '无'}`));
+    }
     if (removedBills.length > 0) {
-        console.log("=== 移除包裹清单 ===");
+        console.log(`=== 🗑️ 移除包裹清单 (${removedBills.length}条) ===`);
         removedBills.forEach((b, i) => console.log(`${i + 1}. 重量:${formatWeight(b)} 单号:${b.billCode || '无'} 地址:${b.receiveAddress || '无'}`));
     }
     
@@ -307,6 +308,13 @@ try {
         }
     } catch (notifyErr) {
         console.log("⚠️ 发送通知异常 (不影响数据过滤): " + notifyErr);
+    }
+    
+    // 详细请求体移至末尾打印，避免干扰顶部的包裹日志视线
+    if (requestBodyDisplay && requestBodyDisplay !== "无请求体") {
+        console.log("=== 📝 详细请求体(末尾) ===");
+        console.log(requestBodyDisplay);
+        console.log("=== 详细请求体结束 ===");
     }
     
     // 返回修改后的响应 - 只包含有关键词的数据

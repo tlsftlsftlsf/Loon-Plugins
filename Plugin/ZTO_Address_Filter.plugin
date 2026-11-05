@@ -4,7 +4,7 @@
 #!author = tlsftlsftlsf
 #!tag = 中通, 快递工具, 地址筛选
 #!icon = https://gitlab.com/lodepuly/iconlibrary/-/raw/master/Other_icon/120px/ZTO.png
-#!date = 2026-11-05 10:07:00
+#!date = 2026-11-05 10:21:00
 
 [Script]
 http-response ^https?:\/\/zztgateway\.zt-express\.com\/NOT_DISPATCH_DETAIL_BUILD_LIST script-path=https://raw.githubusercontent.com/tlsftlsftlsf/Loon-Plugins/main/Script/zto_address_filter.js, requires-body=true, tag=中通未派件筛选
