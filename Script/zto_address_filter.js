@@ -229,9 +229,27 @@ try {
         removedBills.forEach((b, i) => console.log(`${i + 1}. 重量:${formatWeight(b)} 单号:${b.billCode || '无'} 地址:${b.receiveAddress || '无'}`));
     }
     
-    // 构建通知内容：将【保留的单号与地址】调整到最顶端，通知弹出的瞬间无需展开即可直接看到
+    // 构建通知内容：将【移除包裹】放在最顶端优先警示，紧接着展示【保留重件(>3kg，由重到轻)】
     let notificationText = "";
     
+    // 【顶端】优先显示移除的异常包裹
+    if (removedBills.length > 0) {
+        notificationText += `🗑️ 移除包裹 (${removedBills.length}条):\n`;
+        for (let i = 0; i < removedBills.length; i++) {
+            const bill = removedBills[i];
+            const code = bill.billCode || "无单号";
+            const addr = bill.receiveAddress || "无地址";
+            const wt = formatWeight(bill);
+            notificationText += `${i + 1}. ${wt} | ${code}\n   ${addr}\n`;
+        }
+        notificationText += `\n`;
+    } else {
+        notificationText += `🗑️ 移除包裹: 0条\n\n`;
+    }
+    
+    notificationText += `══════════════════════════\n\n`;
+    
+    // 【接下来】显示保留的重件（>3kg 由重到轻排序）
     if (heavyKeptBills.length > 0) {
         notificationText += `⚖️ 保留重件 >3kg (${heavyKeptBills.length}条，由重到轻):\n`;
         for (let i = 0; i < heavyKeptBills.length; i++) {
@@ -259,23 +277,6 @@ try {
         notificationText += `\n`;
     } else {
         notificationText += `⚠️ 无保留包裹 (全部被移除)\n\n`;
-    }
-    
-    notificationText += `══════════════════════════\n\n`;
-    
-    // 显示移除的包裹
-    if (removedBills.length > 0) {
-        notificationText += `🗑️ 移除包裹 (${removedBills.length}条):\n`;
-        for (let i = 0; i < removedBills.length; i++) {
-            const bill = removedBills[i];
-            const code = bill.billCode || "无单号";
-            const addr = bill.receiveAddress || "无地址";
-            const wt = formatWeight(bill);
-            notificationText += `${i + 1}. ${wt} | ${code}\n   ${addr}\n`;
-        }
-        notificationText += `\n`;
-    } else {
-        notificationText += `🗑️ 移除包裹: 0条\n\n`;
     }
     
     notificationText += `══════════════════════════\n`;
