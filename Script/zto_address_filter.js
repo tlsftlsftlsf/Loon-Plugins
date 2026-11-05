@@ -1,12 +1,26 @@
 // 兼容 Loon 与 Quantumult X 通知环境
 if (typeof $notify === "undefined") {
-    var $notify = function(title, subtitle, body) {
+    var $notify = function(title, subtitle, body, attach) {
         if (typeof $notification !== "undefined" && $notification.post) {
-            $notification.post(title, subtitle, body);
+            $notification.post(title, subtitle, body, attach);
         } else {
             console.log("[通知] " + title + " | " + subtitle + "\n" + body);
         }
     };
+}
+
+// 辅助函数：安全获取包裹重量
+function getBillWeight(item) {
+    if (!item) return 0;
+    const val = item.routeAllMaxWeight ?? item.weight ?? item.realWeight ?? item.billingWeight ?? item.pkgWeight ?? 0;
+    const num = parseFloat(val);
+    return isNaN(num) ? 0 : num;
+}
+
+// 辅助函数：格式化重量字符串
+function formatWeight(item) {
+    const w = getBillWeight(item);
+    return w > 0 ? `${w}kg` : "0kg";
 }
 
 // 简化稳定版 - 中通监控
@@ -195,57 +209,75 @@ try {
     // 更新响应数据 - 只保留包含关键词的数据
     data.result = keptBills;
     
-    console.log(`筛选完成 - 保留:${keptBills.length}条 移除:${removedBills.length}条`);
+    // 筛选保留数据中重量大于 3kg 的包裹
+    const heavyKeptBills = keptBills.filter(item => getBillWeight(item) > 3);
+    
+    console.log(`筛选完成 - 保留:${keptBills.length}条 (重件>3kg:${heavyKeptBills.length}条) 移除:${removedBills.length}条`);
+    
+    // 控制台输出详细列表
+    if (removedBills.length > 0) {
+        console.log("=== 移除包裹清单 ===");
+        removedBills.forEach((b, i) => console.log(`${i + 1}. 单号:${b.billCode || '无'} 重量:${formatWeight(b)} 地址:${b.receiveAddress || '无'}`));
+    }
+    if (heavyKeptBills.length > 0) {
+        console.log("=== 保留重件(>3kg)清单 ===");
+        heavyKeptBills.forEach((b, i) => console.log(`${i + 1}. 单号:${b.billCode || '无'} 重量:${formatWeight(b)} 地址:${b.receiveAddress || '无'}`));
+    }
     
     // 构建通知内容
     let notificationText = `📊 模式: ${flagText} (${flagValue})\n`;
-    notificationText += `📊 数据: 原始${originalCount}条 → 保留${keptBills.length}条 → 移除${removedBills.length}条\n`;
+    notificationText += `📊 统计: 原始${originalCount}条 → 保留${keptBills.length}条 (重件>3kg: ${heavyKeptBills.length}条) → 移除${removedBills.length}条\n`;
     notificationText += `══════════════════════════\n\n`;
     
-    // 显示请求体信息
-    notificationText += `📝 请求体信息:\n${requestBodyDisplay}\n\n`;
+    // 1. 移除包裹列表：显示全部单号、地址、重量
+    if (removedBills.length > 0) {
+        notificationText += `🗑️ 移除包裹 (${removedBills.length}条):\n`;
+        for (let i = 0; i < removedBills.length; i++) {
+            const bill = removedBills[i];
+            const code = bill.billCode || "无单号";
+            const addr = bill.receiveAddress || "无地址";
+            const wt = formatWeight(bill);
+            notificationText += `${i + 1}. ${code} (${wt})\n   ${addr}\n`;
+        }
+        notificationText += `\n`;
+    } else {
+        notificationText += `🗑️ 移除包裹: 0条\n\n`;
+    }
+    
     notificationText += `══════════════════════════\n\n`;
     
-    // 显示保留的数据（包含关键词的）
-    if (keptBills.length > 0) {
-        notificationText += `✅ 保留的数据 (包含关键词):\n`;
-        for (let i = 0; i < keptBills.length; i++) {
-            const bill = keptBills[i];
-            notificationText += `${bill.billCode}\n${bill.receiveAddress}\n`;
-            
-            // 如果有产品信息也显示
-            if (bill.productList && bill.productList.length > 0) {
-                notificationText += `产品: ${bill.productList.join(', ')}\n`;
-            }
-            notificationText += `\n`;
+    // 2. 保留包裹列表：仅显示重量大于 3kg 的单号、地址、重量
+    if (heavyKeptBills.length > 0) {
+        notificationText += `⚖️ 保留重件 >3kg (${heavyKeptBills.length}条):\n`;
+        for (let i = 0; i < heavyKeptBills.length; i++) {
+            const bill = heavyKeptBills[i];
+            const code = bill.billCode || "无单号";
+            const addr = bill.receiveAddress || "无地址";
+            const wt = formatWeight(bill);
+            const prod = (bill.productList && bill.productList.length > 0) ? ` [${bill.productList.join(", ")}]` : "";
+            notificationText += `${i + 1}. ${code} (${wt})${prod}\n   ${addr}\n`;
         }
     } else {
-        notificationText += `⚠️ 没有包含关键词的数据\n\n`;
+        notificationText += `⚖️ 保留重件 >3kg: 0条 (保留的${keptBills.length}条均为小件)\n`;
     }
     
-    notificationText += `══════════════════════════\n\n`;
-    
-    // 显示移除的数据统计
+    // 剪贴板内容整理（点击通知可一键复制）
+    let clipText = "";
+    if (heavyKeptBills.length > 0) {
+        clipText += `【重件>3kg】\n` + heavyKeptBills.map(b => `${b.billCode} (${formatWeight(b)}) ${b.receiveAddress || ''}`).join('\n') + `\n\n`;
+    }
     if (removedBills.length > 0) {
-        notificationText += `🗑️ 移除的数据 (${removedBills.length}条):\n`;
-        const displayCount = Math.min(removedBills.length, 10);
-        for (let i = 0; i < displayCount; i++) {
-            const bill = removedBills[i];
-            notificationText += `${bill.billCode || '无单号'}`;
-            if (bill.receiveAddress) {
-                notificationText += ` - ${bill.receiveAddress.substring(0, 30)}`;
-            }
-            notificationText += `\n`;
-        }
-        if (removedBills.length > 10) {
-            notificationText += `... 还有${removedBills.length - 10}条数据\n`;
-        }
+        clipText += `【移除件】\n` + removedBills.map(b => `${b.billCode} (${formatWeight(b)}) ${b.receiveAddress || ''}`).join('\n') + `\n\n`;
     }
+    clipText += `【全部保留单号】\n` + keptBills.map(b => b.billCode).join('\n');
     
     // 发送通知 (加容错保护，避免通知接口异常中断数据返回)
     try {
         if (keptBills.length > 0 || originalCount > 0) {
-            $notify("中通监控 - 关键词过滤", `保留:${keptBills.length}条 | 移除:${removedBills.length}条`, notificationText.trim());
+            const subTitle = `保留:${keptBills.length}条(重件:${heavyKeptBills.length}) | 移除:${removedBills.length}条`;
+            $notify("中通监控 - 关键词过滤", subTitle, notificationText.trim(), {
+                clipboard: clipText.trim()
+            });
             console.log("✅ 通知发送成功");
         } else {
             console.log("ℹ️ 无数据，不发送通知");
