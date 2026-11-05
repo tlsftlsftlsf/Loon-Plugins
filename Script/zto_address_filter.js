@@ -217,17 +217,13 @@ try {
     console.log(`筛选完成 - 保留:${keptBills.length}条 (重件>3kg:${heavyKeptBills.length}条) 移除:${removedBills.length}条`);
     
     // 控制台输出详细列表 (包含详细信息，方便在 Loon 脚本日志中随时核对)
-    if (heavyKeptBills.length > 0) {
-        console.log("=== ⚖️ 保留重件(>3kg，由重到轻)清单 ===");
-        heavyKeptBills.forEach((b, i) => console.log(`${i + 1}. 重量:${formatWeight(b)} 单号:${b.billCode || '无'} 地址:${b.receiveAddress || '无'}`));
-    }
-    if (keptBills.length > 0) {
-        console.log(`=== ✅ 全部保留包裹清单 (${keptBills.length}条) ===`);
-        keptBills.forEach((b, i) => console.log(`${i + 1}. 重量:${formatWeight(b)} 单号:${b.billCode || '无'} 地址:${b.receiveAddress || '无'}`));
-    }
     if (removedBills.length > 0) {
         console.log(`=== 🗑️ 移除包裹清单 (${removedBills.length}条) ===`);
         removedBills.forEach((b, i) => console.log(`${i + 1}. 重量:${formatWeight(b)} 单号:${b.billCode || '无'} 地址:${b.receiveAddress || '无'}`));
+    }
+    if (heavyKeptBills.length > 0) {
+        console.log("=== ⚖️ 保留重件(>3kg，由重到轻)清单 ===");
+        heavyKeptBills.forEach((b, i) => console.log(`${i + 1}. 重量:${formatWeight(b)} 单号:${b.billCode || '无'} 地址:${b.receiveAddress || '无'}`));
     }
     
     // 构建通知内容：将【移除包裹】放在最顶端优先警示，紧接着展示【保留重件(>3kg，由重到轻)】
