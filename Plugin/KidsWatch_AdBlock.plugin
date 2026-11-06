@@ -4,18 +4,11 @@
 #!author = tlsftlsftlsf
 #!tag = 去广告, 小寻, 360儿童卫士
 #!icon = https://gitlab.com/lodepuly/iconlibrary/-/raw/master/Other_icon/120px/AdGuard.png
-#!date = 2026-11-03 10:38:00
+#!date = 2026-11-06 10:46:00
 
 [Rule]
-# ==================== 小寻 (XiaoXun) 自建广告与埋点 ====================
-# 仅拦截广告与打点，不影响手表正常定位、通话、健康与绑定业务
-URL-REGEX,^https?:\/\/xunapi\.xunkids\.com\/xunkids\/adservice,REJECT
-URL-REGEX,^https?:\/\/xunsapp\.xunkids\.com\/burialPoint,REJECT
-
-# ==================== 360 商业化广告与统计 ====================
+# ==================== 360 商业化广告 ====================
 DOMAIN,ad.iot.360.cn,REJECT
-DOMAIN,hye.comp.360os.com,REJECT
-DOMAIN,cmt.comp.360os.com,REJECT
 DOMAIN,track.360os.com,REJECT
 
 # ==================== 穿山甲广告联盟 (Pangolin / Pangle) ====================

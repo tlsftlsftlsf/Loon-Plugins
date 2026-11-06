@@ -1,11 +1,5 @@
-# ==================== 小寻 (XiaoXun) 自建广告与埋点 ====================
-URL-REGEX,^https?:\/\/xunapi\.xunkids\.com\/xunkids\/adservice
-URL-REGEX,^https?:\/\/xunsapp\.xunkids\.com\/burialPoint
-
-# ==================== 360 商业化广告与统计 ====================
+# ==================== 360 商业化广告 ====================
 DOMAIN,ad.iot.360.cn
-DOMAIN,hye.comp.360os.com
-DOMAIN,cmt.comp.360os.com
 DOMAIN,track.360os.com
 
 # ==================== 穿山甲广告联盟 (Pangolin / Pangle) ====================

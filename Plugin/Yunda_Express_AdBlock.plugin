@@ -4,17 +4,13 @@
 #!author = tlsftlsftlsf
 #!tag = 去广告, 韵达超市, 韵镖侠, 快递
 #!icon = https://gitlab.com/lodepuly/iconlibrary/-/raw/master/Other_icon/120px/AdGuard.png
-#!date = 2026-11-03 10:45:00
+#!date = 2026-11-06 10:46:00
 
 [Rule]
 # ==================== 穿山甲广告联盟 (Pangolin / Pangle) ====================
 DOMAIN-KEYWORD,pangolin-sdk-toutiao,REJECT
 DOMAIN-SUFFIX,pglstatp-toutiao.com,REJECT
 DOMAIN,toblog.ctobsnssdk.com,REJECT
-DOMAIN,lf-cdn-tos.bytescm.com,REJECT
-DOMAIN,webcast-open.douyin.com,REJECT
-DOMAIN,vod-license-m.volccdn.com,REJECT
-DOMAIN,apmplus.volces.com,REJECT
 
 # ==================== 快手联盟广告 (KSAD) ====================
 DOMAIN,open.e.kuaishou.com,REJECT
@@ -32,7 +28,6 @@ DOMAIN,mi.gdt.qq.com,REJECT
 DOMAIN,win.gdt.qq.com,REJECT
 DOMAIN,sdk.e.qq.com,REJECT
 DOMAIN,pgdt.ugdtimg.com,REJECT
-DOMAIN,tdid.m.qq.com,REJECT
 
 # ==================== 百度百意 / Sofire 广告打点 ====================
 DOMAIN,sofire.baidu.com,REJECT
@@ -43,5 +38,3 @@ DOMAIN,et.tanx.com,REJECT
 
 # ==================== 广告追踪与埋点统计 ====================
 DOMAIN,bda.yundasys.com,REJECT
-DOMAIN,cnlogs.umeng.com,REJECT
-DOMAIN,utoken.umeng.com,REJECT
