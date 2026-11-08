@@ -1,7 +1,8 @@
 // ==============================================================================
 // Loon / Quantumult X 脚本：快递100 凭据自动捕获与联动未签收查询
 // 1. 自动捕获 getWaybillRecord、getStatusByWaybillNo 的 ts, sign, Cookie, Headers
-// 2. 捕获成功后，可自动触发非中通未签收运单并发查询并推送 Bark (分组: 快递相关)
+// 2. 捕获成功后，自动触发非中通未签收运单极速并发查询并推送 Bark (分组: 快递相关)
+// 3. 内置已签收持久化缓存 + 动态 Token 自动续期 + 完整单号列表展示 (无截断)
 // ==============================================================================
 
 // ====== 配置项 ======
@@ -15,7 +16,6 @@ const NOTIFY_ON_CAPTURE = false;           // 仅凭据捕获时是否弹窗 (�
 
 // 快递查询配置
 const QUERY_CONFIG = {
-    MAX_DISPLAY: 5,
     LOGIN_API: {
         URL: "https://pdanew.yto56.com.cn:49195/opYZUpload/stage/loginNew",
         HEADERS: {
@@ -44,8 +44,8 @@ const QUERY_CONFIG = {
     },
     QUERY_API: {
         URL: "https://yizhan.mamayz.com:48081/opYZApp9193/opYZApp/track/queryTrack",
-        MAX_CONCURRENT: 20,
-        TIMEOUT_MS: 15000
+        CONCURRENCY: 30,    // 极速并发数
+        TIMEOUT_MS: 5000    // 单请求超时 (5秒，避免慢请求拖死整体)
     },
     WAYBILL_URL: "https://api.kuaidihelp.com/g_order_core/v2/image/Save/getWaybillRecord",
     DEFAULT_HEADERS: {
@@ -62,7 +62,9 @@ const QUERY_CONFIG = {
         "物业代收", "门卫代收", "驿站签收", "送货上门", "已取件", "已领取",
         "妥投", "签收", "驿站代收"
     ],
-    ZTO_PREFIXES: ["79", "73", "76", "75", "74"]
+    ZTO_PREFIXES: ["79", "73", "76", "75", "74"],
+    SIGNED_CACHE_KEY: "kuaidi100_signed_cache",
+    MAX_TOTAL_QUERY_MS: 7000 // 自动查单整体最大等待时间 (7秒)，防止拖卡 快递100 App
 };
 
 // 目标API配置
@@ -103,6 +105,23 @@ function getStorage(key) {
         return $prefs.valueForKey(key);
     }
     return null;
+}
+
+function getSignedCache() {
+    const raw = getStorage(QUERY_CONFIG.SIGNED_CACHE_KEY);
+    if (!raw) return {};
+    try { return JSON.parse(raw); } catch (e) { return {}; }
+}
+
+function saveSignedCache(cache) {
+    const keys = Object.keys(cache);
+    if (keys.length > 2500) {
+        const trimmed = {};
+        keys.slice(keys.length - 2000).forEach(k => { trimmed[k] = 1; });
+        setStorage(QUERY_CONFIG.SIGNED_CACHE_KEY, JSON.stringify(trimmed));
+    } else {
+        setStorage(QUERY_CONFIG.SIGNED_CACHE_KEY, JSON.stringify(cache));
+    }
 }
 
 function parseUrlEncoded(body) {
@@ -192,7 +211,7 @@ function shouldRunAutoQuery() {
     if (!lastRun) return true;
     const elapsed = (Date.now() - parseInt(lastRun, 10)) / 1000;
     if (elapsed < QUERY_COOLDOWN_SECONDS) {
-        console.log(`⏳ 距上次自动查单仅 ${Math.round(elapsed)}秒 (冷却时间: ${QUERY_COOLDOWN_SECONDS}秒)，本次跳过查单`);
+        console.log(`⏳ 距上次自动查单仅 ${Math.round(elapsed)}秒 (冷却: ${QUERY_COOLDOWN_SECONDS}秒)，本次仅更新凭据`);
         return false;
     }
     return true;
@@ -210,7 +229,6 @@ async function getMamaToken(forceRefresh = false) {
         if (cached && lastTime) {
             const ageHours = (Date.now() - parseInt(lastTime, 10)) / (1000 * 60 * 60);
             if (ageHours < QUERY_CONFIG.LOGIN_API.TTL_HOURS) {
-                console.log(`🔑 使用缓存的妈妈驿站 Token (已缓存 ${ageHours.toFixed(1)}h)`);
                 return cached;
             }
             console.log(`⏰ 妈妈驿站 Token 已超 ${QUERY_CONFIG.LOGIN_API.TTL_HOURS}h，自动请求刷新...`);
@@ -259,7 +277,7 @@ function extractStatus(data) {
     if (data?.datas && Array.isArray(data.datas) && data.datas.length > 0) {
         const latest = data.datas[0];
         const status = latest.status || "";
-        const desc = latest.desc || latest.remark || "";
+        const desc = latest.desc || latest.remark || latest.context || "";
         if (containsSignedKeyword(desc) || containsSignedKeyword(status)) {
             return "签收";
         }
@@ -292,49 +310,79 @@ async function fetchStatus(waybill, token) {
         }
         const st = extractStatus(data);
         const elapsed = Date.now() - startTime;
-        console.log(`  ✅ ${waybill} [${elapsed}ms] → ${st}`);
-        return { waybill, status: st };
+        return { waybill, status: st, rawData: data, elapsed };
     } catch (e) {
         const elapsed = Date.now() - startTime;
-        console.error(`  ❌ ${waybill} [${elapsed}ms]: ${e.message}`);
-        throw e;
+        throw new Error(`${e.message} [${elapsed}ms]`);
     }
 }
 
-async function batchQuery(waybills, token, maxConcurrent) {
-    console.log(`🔄 开始并发查询 ${waybills.length} 个运单 (并发: ${maxConcurrent})...`);
+/**
+ * 高性能工作池并发查询 (带 Token 失效自动刷新与重试)
+ */
+async function poolQuery(waybills, initialToken, concurrency) {
+    console.log(`🔄 启动连续工作池并发查询 (待查: ${waybills.length}件, 并发数: ${concurrency})...`);
     const activePackages = {};
     const failed = [];
     let signedCount = 0;
+    const signedCache = getSignedCache();
+    let currentToken = initialToken;
+    let isRefreshingToken = false;
+    let index = 0;
 
-    for (let i = 0; i < waybills.length; i += maxConcurrent) {
-        const batch = waybills.slice(i, i + maxConcurrent);
-        const queryPromises = batch.map(async (waybill) => {
+    async function worker() {
+        while (index < waybills.length) {
+            const waybill = waybills[index++];
             try {
-                const res = await fetchStatus(waybill, token);
-                return { waybill, success: true, result: res };
-            } catch (err) {
-                return { waybill, success: false, error: err.message };
-            }
-        });
+                let res = await fetchStatus(waybill, currentToken);
+                // 检查是否返回登录失效
+                const isTokenExpired = res.rawData && (
+                    res.rawData.code === "E0000" ||
+                    (res.rawData.message && (res.rawData.message.includes("登入已失效") || res.rawData.message.includes("重新登入")))
+                );
 
-        const batchResults = await Promise.all(queryPromises);
-        for (const item of batchResults) {
-            if (!item.success) {
-                failed.push(item.waybill);
-                continue;
-            }
-            const { waybill, status } = item.result;
-            if (QUERY_CONFIG.SIGNED_KEYWORDS.some(kw => status.includes(kw))) {
-                signedCount++;
-            } else {
-                activePackages[waybill] = { waybill, status };
+                if (isTokenExpired) {
+                    if (!isRefreshingToken) {
+                        isRefreshingToken = true;
+                        try {
+                            console.log(`⚠️ 检测到妈妈驿站 Token 失效，强制刷新中...`);
+                            currentToken = await getMamaToken(true);
+                        } finally {
+                            isRefreshingToken = false;
+                        }
+                    }
+                    // 使用新 Token 重试一次
+                    res = await fetchStatus(waybill, currentToken);
+                }
+
+                const { status, elapsed } = res;
+                if (QUERY_CONFIG.SIGNED_KEYWORDS.some(kw => status.includes(kw))) {
+                    signedCount++;
+                    signedCache[waybill] = 1; // 写入已签收永久缓存
+                } else {
+                    activePackages[waybill] = { waybill, status };
+                    console.log(`  📦 未签收: ${waybill} [${elapsed}ms] → ${status}`);
+                }
+            } catch (err) {
+                console.error(`  ❌ 查询失败 [${waybill}]: ${err.message}`);
+                failed.push(waybill);
             }
         }
     }
+
+    const workers = [];
+    const actualConcurrency = Math.min(concurrency, waybills.length);
+    for (let i = 0; i < actualConcurrency; i++) {
+        workers.push(worker());
+    }
+    await Promise.all(workers);
+    saveSignedCache(signedCache);
     return { activePackages, failed, signedCount };
 }
 
+/**
+ * 完整分组通知构建（不截断，完整展示所有单号）
+ */
 function buildGroupedNotification(activeList) {
     const groups = {};
     for (const item of activeList) {
@@ -346,17 +394,15 @@ function buildGroupedNotification(activeList) {
     const sections = [];
     for (const [status, items] of Object.entries(groups)) {
         const header = `📌 ${status}（${items.length}个）`;
+        // 完整展示所有单号列表，不截断
         const body = items
-            .slice(0, QUERY_CONFIG.MAX_DISPLAY)
-            .map(d => `  ${d.waybill}`)
+            .map((d, idx) => `  ${idx + 1}. ${d.waybill}`)
             .join("\n");
-        const extra = items.length > QUERY_CONFIG.MAX_DISPLAY
-            ? `\n  ...及其他 ${items.length - QUERY_CONFIG.MAX_DISPLAY} 个`
-            : "";
-        sections.push(`${header}\n${body}${extra}`);
+        sections.push(`${header}\n${body}`);
     }
 
     return {
+        groups,
         title: `共 ${activeList.length} 个未签收`,
         body: sections.join("\n\n")
     };
@@ -409,29 +455,59 @@ async function executeAutoQuery(ts, sign, headers) {
         const nonZTO = uniqueWaybills.filter(w => !isZTOWaybill(w));
         const skippedZTO = uniqueWaybills.length - nonZTO.length;
 
-        console.log(`📊 运单获取成功: 总数${uniqueWaybills.length} (跳过中通${skippedZTO}件, 待查非中通${nonZTO.length}件)`);
-
         if (nonZTO.length === 0) {
-            if (skippedZTO > 0) {
-                console.log("ℹ️ 本批次全部为中通件，无需查询");
-            }
+            console.log(`📊 运单总数${uniqueWaybills.length}件，全部为中通件(已跳过)`);
             return;
         }
 
-        const token = await getMamaToken();
-        const { activePackages, failed, signedCount } = await batchQuery(nonZTO, token, QUERY_CONFIG.QUERY_API.MAX_CONCURRENT);
+        // 优先使用已签收缓存过滤，避免每次重复查询几百个老单子
+        const signedCache = getSignedCache();
+        let cachedSignedCount = 0;
+        const toQuery = [];
+
+        for (const w of nonZTO) {
+            if (signedCache[w]) {
+                cachedSignedCount++;
+            } else {
+                toQuery.push(w);
+            }
+        }
+
+        console.log(`📊 运单分析: 总数${uniqueWaybills.length} (中通跳过${skippedZTO}件, 命中已签收缓存${cachedSignedCount}件, 实际待查${toQuery.length}件)`);
+
+        let activePackages = {};
+        let failed = [];
+        let newlySignedCount = 0;
+
+        if (toQuery.length > 0) {
+            const token = await getMamaToken();
+            const queryRes = await poolQuery(toQuery, token, QUERY_CONFIG.QUERY_API.CONCURRENCY);
+            activePackages = queryRes.activePackages;
+            failed = queryRes.failed;
+            newlySignedCount = queryRes.signedCount;
+        }
+
+        const totalSigned = cachedSignedCount + newlySignedCount;
         const activeList = Object.values(activePackages);
         const activeCount = activeList.length;
 
+        // 控制台日志完整输出未签收清单
+        console.log("\n📋 === 未签收运单（完整清单） ===");
         if (activeCount > 0) {
-            const { title, body } = buildGroupedNotification(activeList);
+            const { groups, title, body } = buildGroupedNotification(activeList);
+            for (const [st, items] of Object.entries(groups)) {
+                console.log(`📌 ${st}（共 ${items.length} 个）：`);
+                items.forEach((item, idx) => console.log(`  ${idx + 1}. ${item.waybill}`));
+            }
+            console.log(`📊 统计: 未签收 ${activeCount}件, 已签收 ${totalSigned}件, 跳过中通 ${skippedZTO}件, 失败 ${failed.length}件\n`);
+
             let subTitle = "";
-            if (signedCount > 0) subTitle += `已过滤 ${signedCount} 个签收`;
+            if (totalSigned > 0) subTitle += `已过滤 ${totalSigned} 个签收`;
             if (skippedZTO > 0) subTitle += `${subTitle ? "，" : ""}跳过 ${skippedZTO} 个中通`;
-            if (failed.length > 0) subTitle += `${subTitle ? "，" : ""}${failed.length} 个查询失败`;
+            if (failed.length > 0) subTitle += `${subTitle ? "，" : ""}${failed.length} 个失败`;
 
             const fullTitle = `未签收快递 (${title})`;
-            const copyContent = activeList.map(d => `${d.waybill} ${d.status}`).join("\n");
+            const copyContent = activeList.map(d => d.waybill).join("\n");
 
             if (ENABLE_LOON_NOTIFY) {
                 sendNotification(fullTitle, subTitle, body, { clipboard: copyContent });
@@ -440,7 +516,7 @@ async function executeAutoQuery(ts, sign, headers) {
                 await sendBark(fullTitle, `${subTitle ? subTitle + "\n\n" : ""}${body}`, copyContent);
             }
         } else {
-            console.log(`🎉 所有非中通运单均已签收 (${signedCount}件已签收)`);
+            console.log(`🎉 恭喜！所有非中通运单均已签收 (共 ${totalSigned} 件已签收)`);
         }
     } catch (e) {
         console.log(`❌ 自动查单异常: ${e.message}`);
@@ -495,11 +571,19 @@ async function captureRequest() {
 
         console.log(`✅ 凭据存储成功 [${api.name}] (TS: ${data.ts}, SIGN: ${data.sign})`);
 
-        // 5. 判断是否触发联动未签收查询
+        // 5. 判断是否触发联动未签收查询 (限时保护，最长等待 7 秒，保证 App 绝对不卡住)
         if (api.canTriggerQuery && data.ts && data.sign && shouldRunAutoQuery()) {
-            await executeAutoQuery(data.ts, data.sign, headers);
+            const timeoutPromise = new Promise(resolve => {
+                setTimeout(() => {
+                    console.log("⚠️ 查单已达安全保护时长 (7秒)，放行 App 请求");
+                    resolve();
+                }, QUERY_CONFIG.MAX_TOTAL_QUERY_MS);
+            });
+            await Promise.race([
+                executeAutoQuery(data.ts, data.sign, headers),
+                timeoutPromise
+            ]);
         } else if (NOTIFY_ON_CAPTURE) {
-            // 仅在未执行查单且开启抓包弹窗时提醒
             const title = `📦 ${api.name}`;
             const subtitle = `TS: ${data.ts || "无"}`;
             const body = `SIGN: ${data.sign || "无"}${data.cookieStored ? "\n🍪 Cookie已更新" : ""}`;

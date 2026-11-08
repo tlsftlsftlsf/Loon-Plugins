@@ -4,7 +4,7 @@
 #!author = tlsftlsftlsf
 #!tag = 快递100, 凭据获取, 物流追踪, 快递工具
 #!icon = https://gitlab.com/lodepuly/iconlibrary/-/raw/main/App_icon/120px/KuaiDi100.png
-#!date = 2026-11-08 18:31:00
+#!date = 2026-11-08 18:43:00
 
 [Script]
 # 1. 抓取凭据接口

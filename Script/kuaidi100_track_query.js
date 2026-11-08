@@ -1,27 +1,22 @@
 // ==============================================================================
 // Loon / Quantumult X 脚本：快递100 自动查询未签收运单状态
-// 功能：读取捕获的凭证，获取运单列表，过滤中通，批量并发查询物流状态，智能兜底判定签收，多状态分组推送
+// 功能：读取捕获的凭证，获取运单列表，过滤中通，命中已签收缓存，极速并发查询物流，智能状态提取，完整单号列表推送
 // ==============================================================================
 
 // 配置常量 - 集中管理关键参数
 const CONFIG = {
-    // 存储键名（需与捕获脚本保持一致）
     STORAGE_KEYS: {
         WAYBILL: "kuaidi100_waybill_record",
         STATUS: "kuaidi100_status_query",
-        HEADERS: "kuaidi100_headers"
+        HEADERS: "kuaidi100_headers",
+        SIGNED_CACHE: "kuaidi100_signed_cache"
     },
-    // 通知内各状态最大展示数量
-    MAX_DISPLAY: 5,
-    // 本地通知开关
     ENABLE_LOON_NOTIFY: true,
-    // Bark 推送配置
     BARK: {
         ENABLE: true,
         KEY: "BApQ6cMJmhpRwiWGQJmJJj", // Bark 设备 Key (留空则不推送)
         GROUP: "快递相关"
     },
-    // 签收判定关键词（用于 API 返回的 status 以及 desc/remark 字段二次兜底）
     SIGNED_KEYWORDS: [
         "已签收", "签收成功", "本人签收", "家人代收", "代收", "亲友代收",
         "物业代收", "门卫代收", "驿站签收", "送货上门", "已取件", "已领取",
@@ -39,7 +34,6 @@ const CONFIG = {
     API_URLS: {
         WAYBILL: "https://api.kuaidihelp.com/g_order_core/v2/image/Save/getWaybillRecord"
     },
-    // 妈妈驿站登录 API 配置（用于动态获取与刷新 Token）
     LOGIN_API: {
         URL: "https://pdanew.yto56.com.cn:49195/opYZUpload/stage/loginNew",
         HEADERS: {
@@ -64,23 +58,18 @@ const CONFIG = {
         },
         STORAGE_KEY: "mamayz_token",
         STORAGE_TIME_KEY: "mamayz_token_updated",
-        TTL_HOURS: 12 // 缓存有效时长 (小时)
+        TTL_HOURS: 12
     },
-    // 快递查询 API 配置
     QUERY_API: {
         URL: "https://yizhan.mamayz.com:48081/opYZApp9193/opYZApp/track/queryTrack",
-        MAX_CONCURRENT: 20,
-        TIMEOUT_MS: 15000
+        CONCURRENCY: 30,
+        TIMEOUT_MS: 5000
     },
-    // 中通快递单号前缀（全部跳过，不查询）
     ZTO_PREFIXES: ["79", "73", "76", "75", "74"]
 };
 
 // ==================== 环境适配与工具函数 ====================
 
-/**
- * 封装持久化存储与读取（兼容 Loon 与 Quantumult X）
- */
 function setStorage(key, value) {
     if (typeof $persistentStore !== "undefined" && $persistentStore.write) {
         return $persistentStore.write(value, key);
@@ -101,10 +90,77 @@ function getStorage(key) {
     return null;
 }
 
-/**
- * 自动获取或刷新妈妈驿站登录 Token
- * @param {boolean} forceRefresh - 是否强制从登录接口刷新
- */
+function getSignedCache() {
+    const raw = getStorage(CONFIG.STORAGE_KEYS.SIGNED_CACHE);
+    if (!raw) return {};
+    try { return JSON.parse(raw); } catch (e) { return {}; }
+}
+
+function saveSignedCache(cache) {
+    const keys = Object.keys(cache);
+    if (keys.length > 2500) {
+        const trimmed = {};
+        keys.slice(keys.length - 2000).forEach(k => { trimmed[k] = 1; });
+        setStorage(CONFIG.STORAGE_KEYS.SIGNED_CACHE, JSON.stringify(trimmed));
+    } else {
+        setStorage(CONFIG.STORAGE_KEYS.SIGNED_CACHE, JSON.stringify(cache));
+    }
+}
+
+function httpFetch(options) {
+    return new Promise((resolve, reject) => {
+        const method = (options.method || "GET").toLowerCase();
+        if (typeof $httpClient !== "undefined" && $httpClient[method]) {
+            $httpClient[method](options, (error, response, data) => {
+                if (error) {
+                    reject(new Error(typeof error === "string" ? error : JSON.stringify(error)));
+                } else {
+                    resolve({
+                        statusCode: response ? (response.status || response.statusCode) : 200,
+                        headers: response ? response.headers : {},
+                        body: data
+                    });
+                }
+            });
+        } else if (typeof $task !== "undefined" && $task.fetch) {
+            $task.fetch(options).then(resolve, reject);
+        } else {
+            reject(new Error("当前运行环境不支持 HTTP 请求"));
+        }
+    });
+}
+
+function sendNotification(title, subtitle, body, attach) {
+    if (typeof $notification !== "undefined" && $notification.post) {
+        $notification.post(title, subtitle, body, attach);
+    } else if (typeof $notify !== "undefined") {
+        $notify(title, subtitle, body);
+    } else {
+        console.log(`[通知] ${title} | ${subtitle}\n${body}`);
+    }
+}
+
+async function sendBarkPush(title, content, copyText) {
+    if (!CONFIG.BARK.ENABLE || !CONFIG.BARK.KEY) return;
+    try {
+        await httpFetch({
+            method: "POST",
+            url: `https://api.day.app/${CONFIG.BARK.KEY}`,
+            headers: { "Content-Type": "application/json; charset=utf-8" },
+            body: JSON.stringify({
+                title: title,
+                body: content,
+                group: CONFIG.BARK.GROUP,
+                copy: copyText || "",
+                icon: "https://gitlab.com/lodepuly/iconlibrary/-/raw/main/App_icon/120px/KuaiDi100.png"
+            })
+        });
+        console.log("✅ Bark 推送成功");
+    } catch (e) {
+        console.log("❌ Bark 推送失败: " + e.message);
+    }
+}
+
 async function getMamaToken(forceRefresh = false) {
     if (!forceRefresh) {
         const cached = getStorage(CONFIG.LOGIN_API.STORAGE_KEY);
@@ -112,7 +168,6 @@ async function getMamaToken(forceRefresh = false) {
         if (cached && lastTime) {
             const ageHours = (Date.now() - parseInt(lastTime, 10)) / (1000 * 60 * 60);
             if (ageHours < CONFIG.LOGIN_API.TTL_HOURS) {
-                console.log(`🔑 使用缓存的妈妈驿站 Token (已缓存 ${ageHours.toFixed(1)}h)`);
                 return cached;
             }
             console.log(`⏰ 妈妈驿站 Token 已超 ${CONFIG.LOGIN_API.TTL_HOURS}h，自动请求刷新...`);
@@ -144,103 +199,26 @@ async function getMamaToken(forceRefresh = false) {
         }
     } catch (e) {
         console.error(`❌ 获取妈妈驿站 Token 失败: ${e.message}`);
-        // 发生错误时兜底使用已缓存的 token
         return getStorage(CONFIG.LOGIN_API.STORAGE_KEY) || "Fid5IHoOkO1PeMXzy672TOBw1zYMjaKLqpRspyho7ecimsJSY3Bw5B1zIEjs78GC";
     }
 }
 
-/**
- * 封装通用网络请求（Promise 化，兼容 Loon $httpClient 与 QX $task.fetch）
- */
-function httpFetch(options) {
-    return new Promise((resolve, reject) => {
-        const method = (options.method || "GET").toLowerCase();
-        if (typeof $httpClient !== "undefined" && $httpClient[method]) {
-            $httpClient[method](options, (error, response, data) => {
-                if (error) {
-                    reject(new Error(typeof error === "string" ? error : JSON.stringify(error)));
-                } else {
-                    resolve({
-                        statusCode: response ? (response.status || response.statusCode) : 200,
-                        headers: response ? response.headers : {},
-                        body: data
-                    });
-                }
-            });
-        } else if (typeof $task !== "undefined" && $task.fetch) {
-            $task.fetch(options).then(resolve, reject);
-        } else {
-            reject(new Error("当前运行环境不支持 HTTP 请求"));
-        }
-    });
-}
-
-/**
- * 封装通用通知（兼容 Loon 与 Quantumult X）
- */
-function sendNotification(title, subtitle, body, attach) {
-    if (typeof $notification !== "undefined" && $notification.post) {
-        $notification.post(title, subtitle, body, attach);
-    } else if (typeof $notify !== "undefined") {
-        $notify(title, subtitle, body);
-    } else {
-        console.log(`[通知] ${title} | ${subtitle}\n${body}`);
-    }
-}
-
-/**
- * 发送 Bark 推送通知
- */
-async function sendBarkPush(title, content, copyText) {
-    if (!CONFIG.BARK.ENABLE || !CONFIG.BARK.KEY) return;
-    try {
-        await httpFetch({
-            method: "POST",
-            url: `https://api.day.app/${CONFIG.BARK.KEY}`,
-            headers: { "Content-Type": "application/json; charset=utf-8" },
-            body: JSON.stringify({
-                title: title,
-                body: content,
-                group: CONFIG.BARK.GROUP,
-                copy: copyText || "",
-                icon: "https://gitlab.com/lodepuly/iconlibrary/-/raw/main/App_icon/120px/KuaiDi100.png"
-            })
-        });
-        console.log("✅ Bark 推送成功");
-    } catch (e) {
-        console.log("❌ Bark 推送失败: " + e.message);
-    }
-}
-
-/**
- * 将对象序列化为 URL-encoded 表单字符串
- */
 function toFormData(obj) {
     return Object.keys(obj)
         .map(k => encodeURIComponent(k) + "=" + encodeURIComponent(obj[k]))
         .join("&");
 }
 
-/**
- * 判断是否为中通快递单号
- */
 function isZTOWaybill(waybill) {
     return CONFIG.ZTO_PREFIXES.some(prefix => waybill.startsWith(prefix));
 }
 
-/**
- * 关键词兜底判定：检查描述文本是否包含签收关键词
- */
 function containsSignedKeyword(text) {
     if (!text) return false;
     return CONFIG.SIGNED_KEYWORDS.some(kw => text.includes(kw));
 }
 
-/**
- * 获取存储的 JSON 数据
- */
 function getStoredData(key) {
-    console.log(`🔍 读取存储数据 [key: ${key}]`);
     const rawData = getStorage(key);
     if (!rawData) throw new Error(`存储数据不存在 [key: ${key}]，请先触发抓包获取凭证`);
     try {
@@ -250,9 +228,6 @@ function getStoredData(key) {
     }
 }
 
-/**
- * 获取合并后的请求头
- */
 function getRequestHeaders() {
     try {
         const storedHeaders = getStoredData(CONFIG.STORAGE_KEYS.HEADERS);
@@ -263,35 +238,8 @@ function getRequestHeaders() {
     }
 }
 
-/**
- * 发送请求并自动解析 JSON
- */
-async function fetchData(options) {
-    try {
-        console.log(`📡 发送请求 [${options.method || 'GET'}] ${options.url}`);
-        const response = await httpFetch(options);
-        let data = {};
-        if (response.body) {
-            try {
-                data = JSON.parse(response.body);
-            } catch (parseErr) {
-                data = response.body;
-            }
-        }
-        const statusCode = response.statusCode || 200;
-        console.log(`📡 响应状态 [${options.url}]：${statusCode}`);
-        return { status: statusCode, data };
-    } catch (e) {
-        console.error(`❌ 请求失败 [${options.url}]：${e.message}`);
-        throw new Error(`网络请求异常：${e.message}`);
-    }
-}
-
 // ==================== 业务逻辑 ====================
 
-/**
- * 获取快递100面单记录
- */
 async function getWaybillRecords() {
     try {
         const params = getStoredData(CONFIG.STORAGE_KEYS.WAYBILL);
@@ -318,14 +266,19 @@ async function getWaybillRecords() {
             })
         });
 
-        const { status, data } = await fetchData({
+        const resp = await httpFetch({
             method: "POST",
             url: CONFIG.API_URLS.WAYBILL,
             headers,
             body: formData
         });
 
-        if (status !== 200 || data.code !== 0) {
+        let data = {};
+        if (resp.body) {
+            try { data = JSON.parse(resp.body); } catch (e) { data = resp.body; }
+        }
+
+        if (resp.statusCode !== 200 || data.code !== 0) {
             throw new Error(`运单请求失败：${data.msg || "未知错误"}`);
         }
 
@@ -333,61 +286,49 @@ async function getWaybillRecords() {
             group.list ? group.list.map(item => item.waybill).filter(Boolean) : []
         );
 
-        // 运单号去重
         const uniqueWaybills = [...new Set(waybills)];
+        const nonZTO = uniqueWaybills.filter(w => !isZTOWaybill(w));
+        const skippedZTO = uniqueWaybills.length - nonZTO.length;
 
-        if (uniqueWaybills.length < waybills.length) {
-            console.log(`🔗 去重：${waybills.length} → ${uniqueWaybills.length}（移除 ${waybills.length - uniqueWaybills.length} 个重复）`);
+        // 命中已签收缓存
+        const signedCache = getSignedCache();
+        let cachedSignedCount = 0;
+        const toQuery = [];
+
+        for (const w of nonZTO) {
+            if (signedCache[w]) {
+                cachedSignedCount++;
+            } else {
+                toQuery.push(w);
+            }
         }
 
-        // 过滤中通单号
-        const filtered = uniqueWaybills.filter(w => !isZTOWaybill(w));
-        const skipped = uniqueWaybills.length - filtered.length;
-
-        if (skipped > 0) {
-            console.log(`⏭️ 跳过 ${skipped} 个中通快递单号（不查询）`);
-        }
-
-        console.log(`✅ 有效非中通运单 ${filtered.length} 个`);
-        return { waybills: filtered, skippedZTO: skipped };
+        console.log(`📊 运单汇总: 总数${uniqueWaybills.length}件 (跳过中通${skippedZTO}件, 命中已签收缓存${cachedSignedCount}件, 实际需查询${toQuery.length}件)`);
+        return { toQuery, skippedZTO, cachedSignedCount, totalNonZTO: nonZTO.length };
     } catch (e) {
         console.error(`❌ 运单列表获取失败：${e.message}`);
         sendNotification("运单获取失败", e.message, "请检查存储参数或重新打开快递100抓包");
-        return { waybills: [], skippedZTO: 0 };
+        return { toQuery: [], skippedZTO: 0, cachedSignedCount: 0, totalNonZTO: 0 };
     }
 }
 
-/**
- * 从 API 响应提取状态，datas[0].status 为主，desc/remark 兜底
- */
 function extractStatus(data) {
     if (data?.datas && Array.isArray(data.datas) && data.datas.length > 0) {
         const latest = data.datas[0];
         const status = latest.status || "";
-        const desc = latest.desc || latest.remark || "";
-
-        // desc/remark 关键词优先
-        if (containsSignedKeyword(desc)) {
+        const desc = latest.desc || latest.remark || latest.context || "";
+        if (containsSignedKeyword(desc) || containsSignedKeyword(status)) {
             return "签收";
         }
-
-        // status 字段自身是否匹配
-        if (containsSignedKeyword(status)) {
-            return "签收";
-        }
-
         return status || "未知状态";
     }
     return "未知状态";
 }
 
-/**
- * 单运单查询
- */
 async function fetchStatus(waybill, token) {
     const startTime = Date.now();
     try {
-        const fetchPromise = fetchData({
+        const fetchPromise = httpFetch({
             method: "POST",
             url: CONFIG.QUERY_API.URL,
             headers: {
@@ -402,79 +343,84 @@ async function fetchStatus(waybill, token) {
             setTimeout(() => reject(new Error(`请求超时 (${CONFIG.QUERY_API.TIMEOUT_MS}ms)`)), CONFIG.QUERY_API.TIMEOUT_MS);
         });
 
-        const { status, data } = await Promise.race([fetchPromise, timeoutPromise]);
-        if (status !== 200) throw new Error(`HTTP ${status}`);
-
+        const resp = await Promise.race([fetchPromise, timeoutPromise]);
+        let data = {};
+        if (resp.body) {
+            try { data = JSON.parse(resp.body); } catch (e) { data = resp.body; }
+        }
         const extractedStatus = extractStatus(data);
         const elapsed = Date.now() - startTime;
-        console.log(`  ✅ ${waybill} [${elapsed}ms] → ${extractedStatus}`);
-
-        return { waybill, status: extractedStatus, rawData: data };
+        return { waybill, status: extractedStatus, rawData: data, elapsed };
     } catch (e) {
         const elapsed = Date.now() - startTime;
-        console.error(`  ❌ ${waybill} [${elapsed}ms]: ${e.message}`);
-        throw e;
+        throw new Error(`${e.message} [${elapsed}ms]`);
     }
 }
 
 /**
- * 批量并发查询
+ * 高性能工作池并发查询 (带 Token 失效自动刷新与重试)
  */
-async function batchQuery(waybills, token, maxConcurrent) {
-    console.log(`🔄 开始查询 ${waybills.length} 个运单（并发: ${maxConcurrent}）`);
-
+async function poolQuery(waybills, initialToken, concurrency) {
+    console.log(`🔄 启动连续工作池并发查询 (待查: ${waybills.length}件, 并发数: ${concurrency})...`);
     const activePackages = {};
     const failed = [];
     let signedCount = 0;
+    const signedCache = getSignedCache();
+    let currentToken = initialToken;
+    let isRefreshingToken = false;
+    let index = 0;
 
-    for (let i = 0; i < waybills.length; i += maxConcurrent) {
-        const batch = waybills.slice(i, i + maxConcurrent);
-        const batchNum = Math.floor(i / maxConcurrent) + 1;
-        console.log(`📦 第 ${batchNum} 批（${batch.length} 个）`);
-
-        const queryPromises = batch.map(async (waybill) => {
+    async function worker() {
+        while (index < waybills.length) {
+            const waybill = waybills[index++];
             try {
-                const result = await fetchStatus(waybill, token);
-                return { waybill, success: true, result };
-            } catch (error) {
-                return { waybill, success: false, error: error.message };
-            }
-        });
+                let res = await fetchStatus(waybill, currentToken);
+                // 检查是否返回登录失效
+                const isTokenExpired = res.rawData && (
+                    res.rawData.code === "E0000" ||
+                    (res.rawData.message && (res.rawData.message.includes("登入已失效") || res.rawData.message.includes("重新登入")))
+                );
 
-        const batchResults = await Promise.all(queryPromises);
-        console.log(`✅ 第 ${batchNum} 批完成`);
+                if (isTokenExpired) {
+                    if (!isRefreshingToken) {
+                        isRefreshingToken = true;
+                        try {
+                            console.log(`⚠️ 检测到妈妈驿站 Token 失效，强制刷新中...`);
+                            currentToken = await getMamaToken(true);
+                        } finally {
+                            isRefreshingToken = false;
+                        }
+                    }
+                    res = await fetchStatus(waybill, currentToken);
+                }
 
-        for (const item of batchResults) {
-            if (!item.success) {
-                failed.push(item.waybill);
-                continue;
-            }
-
-            const { waybill, status } = item.result;
-
-            if (CONFIG.SIGNED_KEYWORDS.some(kw => status.includes(kw))) {
-                console.log(`📦 ${waybill} 已签收（${status}），过滤`);
-                signedCount++;
-            } else {
-                activePackages[waybill] = { waybill, status };
-                console.log(`✅ ${waybill} 未签收（${status}），保留`);
+                const { status, elapsed } = res;
+                if (CONFIG.SIGNED_KEYWORDS.some(kw => status.includes(kw))) {
+                    signedCount++;
+                    signedCache[waybill] = 1;
+                } else {
+                    activePackages[waybill] = { waybill, status };
+                    console.log(`  📦 未签收: ${waybill} [${elapsed}ms] → ${status}`);
+                }
+            } catch (err) {
+                console.error(`  ❌ 查询失败 [${waybill}]: ${err.message}`);
+                failed.push(waybill);
             }
         }
     }
 
-    console.log(`📊 完成：未签收 ${Object.keys(activePackages).length}，已签收 ${signedCount}，失败 ${failed.length}`);
+    const workers = [];
+    const actualConcurrency = Math.min(concurrency, waybills.length);
+    for (let i = 0; i < actualConcurrency; i++) {
+        workers.push(worker());
+    }
+    await Promise.all(workers);
+    saveSignedCache(signedCache);
     return { activePackages, failed, signedCount };
 }
 
 /**
- * 格式化运单详情
- */
-function formatDetail(detail) {
-    return `${detail.waybill}：${detail.status}`;
-}
-
-/**
- * 按签收状态分组，生成通知内容
+ * 完整分组通知构建（不截断，完整展示所有单号）
  */
 function buildGroupedNotification(activeList) {
     const groups = {};
@@ -487,17 +433,15 @@ function buildGroupedNotification(activeList) {
     const sections = [];
     for (const [status, items] of Object.entries(groups)) {
         const header = `📌 ${status}（${items.length}个）`;
+        // 完整展示所有单号列表，不截断
         const body = items
-            .slice(0, CONFIG.MAX_DISPLAY)
-            .map(d => `  ${d.waybill}`)
+            .map((d, idx) => `  ${idx + 1}. ${d.waybill}`)
             .join("\n");
-        const extra = items.length > CONFIG.MAX_DISPLAY
-            ? `\n  ...及其他 ${items.length - CONFIG.MAX_DISPLAY} 个`
-            : "";
-        sections.push(`${header}\n${body}${extra}`);
+        sections.push(`${header}\n${body}`);
     }
 
     return {
+        groups,
         title: `共 ${activeList.length} 个未签收`,
         body: sections.join("\n\n")
     };
@@ -510,9 +454,9 @@ async function main() {
     try {
         console.log("🚀 快递查询脚本启动");
 
-        // 第一步：获取运单号（已去重，已过滤中通）
-        const { waybills, skippedZTO } = await getWaybillRecords();
-        if (waybills.length === 0) {
+        // 第一步：获取运单号（去重、过滤中通、过滤已签收缓存）
+        const { toQuery, skippedZTO, cachedSignedCount, totalNonZTO } = await getWaybillRecords();
+        if (totalNonZTO === 0) {
             const msg = skippedZTO > 0
                 ? `无有效运单（跳过 ${skippedZTO} 个中通）`
                 : "未获取到有效运单";
@@ -522,26 +466,40 @@ async function main() {
             return;
         }
 
-        // 第二步：获取或刷新妈妈驿站 Token 并批量并发查询状态
-        const token = await getMamaToken();
-        const { activePackages, failed, signedCount } = await batchQuery(
-            waybills, token, CONFIG.QUERY_API.MAX_CONCURRENT
-        );
+        let activePackages = {};
+        let failed = [];
+        let newlySignedCount = 0;
 
-        // 第三步：构造分组通知
+        // 第二步：批量并发查询
+        if (toQuery.length > 0) {
+            const token = await getMamaToken();
+            const queryRes = await poolQuery(toQuery, token, CONFIG.QUERY_API.CONCURRENCY);
+            activePackages = queryRes.activePackages;
+            failed = queryRes.failed;
+            newlySignedCount = queryRes.signedCount;
+        }
+
+        const totalSigned = cachedSignedCount + newlySignedCount;
         const activeList = Object.values(activePackages);
         const activeCount = activeList.length;
 
+        // 第三步：控制台日志完整列出未签收运单（不截断）
+        console.log("\n📋 === 未签收运单（完整列表） ===");
         if (activeCount > 0) {
-            const { title, body } = buildGroupedNotification(activeList);
+            const { groups, title, body } = buildGroupedNotification(activeList);
+            for (const [st, items] of Object.entries(groups)) {
+                console.log(`📌 状态 [${st}]（共 ${items.length} 个）：`);
+                items.forEach((item, idx) => console.log(`  ${idx + 1}. ${item.waybill}`));
+            }
+            console.log(`\n📊 统计: 未签收 ${activeCount}件, 已签收 ${totalSigned}件, 跳过中通 ${skippedZTO}件, 失败 ${failed.length}件, 耗时 ${Date.now() - scriptStart}ms\n`);
 
             let subTitle = "";
-            if (signedCount > 0) subTitle += `已过滤 ${signedCount} 个签收`;
+            if (totalSigned > 0) subTitle += `已过滤 ${totalSigned} 个签收`;
             if (skippedZTO > 0) subTitle += `${subTitle ? "，" : ""}跳过 ${skippedZTO} 个中通`;
-            if (failed.length > 0) subTitle += `${subTitle ? "，" : ""}${failed.length} 个查询失败`;
+            if (failed.length > 0) subTitle += `${subTitle ? "，" : ""}${failed.length} 个失败`;
 
             const notifyTitle = `未签收快递 (${title})`;
-            const copyContent = activeList.map(d => `${d.waybill} ${d.status}`).join("\n");
+            const copyContent = activeList.map(d => d.waybill).join("\n");
 
             // 1. Loon 本地通知
             if (CONFIG.ENABLE_LOON_NOTIFY) {
@@ -550,14 +508,15 @@ async function main() {
                 });
             }
 
-            // 2. Bark 推送
+            // 2. Bark 推送 (分组: 快递相关，完整单号列表)
             if (CONFIG.BARK.ENABLE && CONFIG.BARK.KEY) {
                 await sendBarkPush(notifyTitle, `${subTitle ? subTitle + "\n\n" : ""}${body}`, copyContent);
             }
         } else {
-            let message = `共获取 ${waybills.length + skippedZTO} 个运单`;
+            console.log(`🎉 所有非中通运单均已签收 (共 ${totalSigned} 件已签收)`);
+            let message = `共获取 ${totalNonZTO + skippedZTO} 个运单`;
             if (skippedZTO > 0) message += `，跳过 ${skippedZTO} 个中通`;
-            if (signedCount > 0) message += `，${signedCount} 个已签收`;
+            message += `，${totalSigned} 个已签收`;
             if (failed.length > 0) message += `，${failed.length} 个查询失败`;
             
             if (CONFIG.ENABLE_LOON_NOTIFY) {
@@ -567,30 +526,6 @@ async function main() {
                 await sendBarkPush("快递状态: 全部已签收", message, "");
             }
         }
-
-        // 第四步：控制台完整日志输出
-        console.log("\n📋 === 未签收运单（按状态分组） ===");
-        if (activeCount > 0) {
-            const groups = {};
-            activeList.forEach(d => {
-                if (!groups[d.status]) groups[d.status] = [];
-                groups[d.status].push(d);
-            });
-            for (const [status, items] of Object.entries(groups)) {
-                console.log(`\n📌 ${status}（${items.length}个）：`);
-                items.forEach(d => console.log(`  ${formatDetail(d)}`));
-            }
-        } else {
-            console.log("  （无）");
-        }
-
-        console.log(`\n📊 === 统计 ===`);
-        console.log(`  总运单数：${waybills.length + skippedZTO}`);
-        if (skippedZTO > 0) console.log(`  跳过中通：${skippedZTO}`);
-        console.log(`  未签收：${activeCount}`);
-        console.log(`  已签收：${signedCount}`);
-        console.log(`  查询失败：${failed.length}`);
-        console.log(`  总耗时：${Date.now() - scriptStart}ms`);
 
     } catch (e) {
         console.error(`❌ 脚本执行异常：${e.message}`);
