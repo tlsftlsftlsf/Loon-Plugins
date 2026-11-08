@@ -16,12 +16,34 @@ const NOTIFY_ON_CAPTURE = false;           // 仅凭据捕获时是否弹窗 (�
 // 快递查询配置
 const QUERY_CONFIG = {
     MAX_DISPLAY: 5,
+    LOGIN_API: {
+        URL: "https://pdanew.yto56.com.cn:49195/opYZUpload/stage/loginNew",
+        HEADERS: {
+            "Host": "pdanew.yto56.com.cn:49195",
+            "Content-Type": "application/json",
+            "User-Agent": "YtoStation/6.7.64 (iPhone; iOS 15.4.1; Scale/3.00)",
+            "pdaVersionNo": "6.7.64",
+            "pdaVersionCode": "2080",
+            "pdaDeviceType": "YZ-IOS",
+            "pdaDeviceNo": "D9BDDD83-0366-494D-8350-F684C92B4EBB",
+            "serialNo": "D9BDDD83-0366-494D-8350-F684C92B4EBB",
+            "stationCode": "0000765271",
+            "orgCode": "710007",
+            "loginUserCode": "02454099",
+            "loginUserName": "17682349867",
+            "userName": "17682349867"
+        },
+        BODY: {
+            "encryptWord": "+huLh/mooBrJxJezu0IpBw==",
+            "username": "17682349867",
+            "password": "hqAeSrr6y35veiVY4OqcZg=="
+        },
+        STORAGE_KEY: "mamayz_token",
+        STORAGE_TIME_KEY: "mamayz_token_updated",
+        TTL_HOURS: 12 // 缓存有效时长 (小时)
+    },
     QUERY_API: {
         URL: "https://yizhan.mamayz.com:48081/opYZApp9193/opYZApp/track/queryTrack",
-        HEADERS: {
-            "stationCode": "0000765271",
-            "token": "YiKNWC5CA3pRIltAjGOMgg3tKVOOwE4cKaO1vVDnHAHgPdIyXZGFT3TO0qamTvDy"
-        },
         MAX_CONCURRENT: 20,
         TIMEOUT_MS: 15000
     },
@@ -178,6 +200,52 @@ function shouldRunAutoQuery() {
 
 // ==================== 联动未签收查询业务 ====================
 
+/**
+ * 自动获取或刷新妈妈驿站登录 Token
+ */
+async function getMamaToken(forceRefresh = false) {
+    if (!forceRefresh) {
+        const cached = getStorage(QUERY_CONFIG.LOGIN_API.STORAGE_KEY);
+        const lastTime = getStorage(QUERY_CONFIG.LOGIN_API.STORAGE_TIME_KEY);
+        if (cached && lastTime) {
+            const ageHours = (Date.now() - parseInt(lastTime, 10)) / (1000 * 60 * 60);
+            if (ageHours < QUERY_CONFIG.LOGIN_API.TTL_HOURS) {
+                console.log(`🔑 使用缓存的妈妈驿站 Token (已缓存 ${ageHours.toFixed(1)}h)`);
+                return cached;
+            }
+            console.log(`⏰ 妈妈驿站 Token 已超 ${QUERY_CONFIG.LOGIN_API.TTL_HOURS}h，自动请求刷新...`);
+        }
+    }
+
+    console.log("🔐 正在请求妈妈驿站登录接口获取最新 Token...");
+    try {
+        const resp = await httpFetch({
+            method: "POST",
+            url: QUERY_CONFIG.LOGIN_API.URL,
+            headers: QUERY_CONFIG.LOGIN_API.HEADERS,
+            body: JSON.stringify(QUERY_CONFIG.LOGIN_API.BODY)
+        });
+
+        let data = {};
+        if (resp.body) {
+            try { data = JSON.parse(resp.body); } catch (e) { data = resp.body; }
+        }
+
+        if (resp.statusCode === 200 && data.code === "200" && data.data && data.data.token) {
+            const token = data.data.token;
+            setStorage(QUERY_CONFIG.LOGIN_API.STORAGE_KEY, token);
+            setStorage(QUERY_CONFIG.LOGIN_API.STORAGE_TIME_KEY, String(Date.now()));
+            console.log(`✅ 妈妈驿站登录成功，获取到新 Token: ${token.substring(0, 15)}...`);
+            return token;
+        } else {
+            throw new Error(`登录接口返回异常: ${data.message || JSON.stringify(data)}`);
+        }
+    } catch (e) {
+        console.error(`❌ 获取妈妈驿站 Token 失败: ${e.message}`);
+        return getStorage(QUERY_CONFIG.LOGIN_API.STORAGE_KEY) || "Fid5IHoOkO1PeMXzy672TOBw1zYMjaKLqpRspyho7ecimsJSY3Bw5B1zIEjs78GC";
+    }
+}
+
 function isZTOWaybill(waybill) {
     return QUERY_CONFIG.ZTO_PREFIXES.some(prefix => waybill.startsWith(prefix));
 }
@@ -200,13 +268,17 @@ function extractStatus(data) {
     return "未知状态";
 }
 
-async function fetchStatus(waybill) {
+async function fetchStatus(waybill, token) {
     const startTime = Date.now();
     try {
         const fetchPromise = httpFetch({
             method: "POST",
             url: QUERY_CONFIG.QUERY_API.URL,
-            headers: { ...QUERY_CONFIG.QUERY_API.HEADERS, "Content-Type": "application/json" },
+            headers: {
+                "stationCode": QUERY_CONFIG.LOGIN_API.HEADERS.stationCode,
+                "token": token,
+                "Content-Type": "application/json"
+            },
             body: JSON.stringify({ waybillNo: waybill })
         });
         const timeoutPromise = new Promise((_, reject) => {
@@ -229,7 +301,7 @@ async function fetchStatus(waybill) {
     }
 }
 
-async function batchQuery(waybills, maxConcurrent) {
+async function batchQuery(waybills, token, maxConcurrent) {
     console.log(`🔄 开始并发查询 ${waybills.length} 个运单 (并发: ${maxConcurrent})...`);
     const activePackages = {};
     const failed = [];
@@ -239,7 +311,7 @@ async function batchQuery(waybills, maxConcurrent) {
         const batch = waybills.slice(i, i + maxConcurrent);
         const queryPromises = batch.map(async (waybill) => {
             try {
-                const res = await fetchStatus(waybill);
+                const res = await fetchStatus(waybill, token);
                 return { waybill, success: true, result: res };
             } catch (err) {
                 return { waybill, success: false, error: err.message };
@@ -346,7 +418,8 @@ async function executeAutoQuery(ts, sign, headers) {
             return;
         }
 
-        const { activePackages, failed, signedCount } = await batchQuery(nonZTO, QUERY_CONFIG.QUERY_API.MAX_CONCURRENT);
+        const token = await getMamaToken();
+        const { activePackages, failed, signedCount } = await batchQuery(nonZTO, token, QUERY_CONFIG.QUERY_API.MAX_CONCURRENT);
         const activeList = Object.values(activePackages);
         const activeCount = activeList.length;
 

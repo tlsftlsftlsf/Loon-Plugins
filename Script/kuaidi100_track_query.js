@@ -39,13 +39,36 @@ const CONFIG = {
     API_URLS: {
         WAYBILL: "https://api.kuaidihelp.com/g_order_core/v2/image/Save/getWaybillRecord"
     },
+    // 妈妈驿站登录 API 配置（用于动态获取与刷新 Token）
+    LOGIN_API: {
+        URL: "https://pdanew.yto56.com.cn:49195/opYZUpload/stage/loginNew",
+        HEADERS: {
+            "Host": "pdanew.yto56.com.cn:49195",
+            "Content-Type": "application/json",
+            "User-Agent": "YtoStation/6.7.64 (iPhone; iOS 15.4.1; Scale/3.00)",
+            "pdaVersionNo": "6.7.64",
+            "pdaVersionCode": "2080",
+            "pdaDeviceType": "YZ-IOS",
+            "pdaDeviceNo": "D9BDDD83-0366-494D-8350-F684C92B4EBB",
+            "serialNo": "D9BDDD83-0366-494D-8350-F684C92B4EBB",
+            "stationCode": "0000765271",
+            "orgCode": "710007",
+            "loginUserCode": "02454099",
+            "loginUserName": "17682349867",
+            "userName": "17682349867"
+        },
+        BODY: {
+            "encryptWord": "+huLh/mooBrJxJezu0IpBw==",
+            "username": "17682349867",
+            "password": "hqAeSrr6y35veiVY4OqcZg=="
+        },
+        STORAGE_KEY: "mamayz_token",
+        STORAGE_TIME_KEY: "mamayz_token_updated",
+        TTL_HOURS: 12 // 缓存有效时长 (小时)
+    },
     // 快递查询 API 配置
     QUERY_API: {
         URL: "https://yizhan.mamayz.com:48081/opYZApp9193/opYZApp/track/queryTrack",
-        HEADERS: {
-            "stationCode": "0000765271",
-            "token": "YiKNWC5CA3pRIltAjGOMgg3tKVOOwE4cKaO1vVDnHAHgPdIyXZGFT3TO0qamTvDy"
-        },
         MAX_CONCURRENT: 20,
         TIMEOUT_MS: 15000
     },
@@ -56,8 +79,18 @@ const CONFIG = {
 // ==================== 环境适配与工具函数 ====================
 
 /**
- * 封装持久化读取（兼容 Loon 与 Quantumult X）
+ * 封装持久化存储与读取（兼容 Loon 与 Quantumult X）
  */
+function setStorage(key, value) {
+    if (typeof $persistentStore !== "undefined" && $persistentStore.write) {
+        return $persistentStore.write(value, key);
+    }
+    if (typeof $prefs !== "undefined" && $prefs.setValueForKey) {
+        return $prefs.setValueForKey(value, key);
+    }
+    return false;
+}
+
 function getStorage(key) {
     if (typeof $persistentStore !== "undefined" && $persistentStore.read) {
         return $persistentStore.read(key);
@@ -66,6 +99,54 @@ function getStorage(key) {
         return $prefs.valueForKey(key);
     }
     return null;
+}
+
+/**
+ * 自动获取或刷新妈妈驿站登录 Token
+ * @param {boolean} forceRefresh - 是否强制从登录接口刷新
+ */
+async function getMamaToken(forceRefresh = false) {
+    if (!forceRefresh) {
+        const cached = getStorage(CONFIG.LOGIN_API.STORAGE_KEY);
+        const lastTime = getStorage(CONFIG.LOGIN_API.STORAGE_TIME_KEY);
+        if (cached && lastTime) {
+            const ageHours = (Date.now() - parseInt(lastTime, 10)) / (1000 * 60 * 60);
+            if (ageHours < CONFIG.LOGIN_API.TTL_HOURS) {
+                console.log(`🔑 使用缓存的妈妈驿站 Token (已缓存 ${ageHours.toFixed(1)}h)`);
+                return cached;
+            }
+            console.log(`⏰ 妈妈驿站 Token 已超 ${CONFIG.LOGIN_API.TTL_HOURS}h，自动请求刷新...`);
+        }
+    }
+
+    console.log("🔐 正在请求妈妈驿站登录接口获取最新 Token...");
+    try {
+        const resp = await httpFetch({
+            method: "POST",
+            url: CONFIG.LOGIN_API.URL,
+            headers: CONFIG.LOGIN_API.HEADERS,
+            body: JSON.stringify(CONFIG.LOGIN_API.BODY)
+        });
+
+        let data = {};
+        if (resp.body) {
+            try { data = JSON.parse(resp.body); } catch (e) { data = resp.body; }
+        }
+
+        if (resp.statusCode === 200 && data.code === "200" && data.data && data.data.token) {
+            const token = data.data.token;
+            setStorage(CONFIG.LOGIN_API.STORAGE_KEY, token);
+            setStorage(CONFIG.LOGIN_API.STORAGE_TIME_KEY, String(Date.now()));
+            console.log(`✅ 妈妈驿站登录成功，获取到新 Token: ${token.substring(0, 15)}...`);
+            return token;
+        } else {
+            throw new Error(`登录接口返回异常: ${data.message || JSON.stringify(data)}`);
+        }
+    } catch (e) {
+        console.error(`❌ 获取妈妈驿站 Token 失败: ${e.message}`);
+        // 发生错误时兜底使用已缓存的 token
+        return getStorage(CONFIG.LOGIN_API.STORAGE_KEY) || "Fid5IHoOkO1PeMXzy672TOBw1zYMjaKLqpRspyho7ecimsJSY3Bw5B1zIEjs78GC";
+    }
 }
 
 /**
@@ -303,13 +384,17 @@ function extractStatus(data) {
 /**
  * 单运单查询
  */
-async function fetchStatus(waybill) {
+async function fetchStatus(waybill, token) {
     const startTime = Date.now();
     try {
         const fetchPromise = fetchData({
             method: "POST",
             url: CONFIG.QUERY_API.URL,
-            headers: { ...CONFIG.QUERY_API.HEADERS, "Content-Type": "application/json" },
+            headers: {
+                "stationCode": CONFIG.LOGIN_API.HEADERS.stationCode,
+                "token": token,
+                "Content-Type": "application/json"
+            },
             body: JSON.stringify({ waybillNo: waybill })
         });
 
@@ -335,7 +420,7 @@ async function fetchStatus(waybill) {
 /**
  * 批量并发查询
  */
-async function batchQuery(waybills, queryFn, maxConcurrent) {
+async function batchQuery(waybills, token, maxConcurrent) {
     console.log(`🔄 开始查询 ${waybills.length} 个运单（并发: ${maxConcurrent}）`);
 
     const activePackages = {};
@@ -349,7 +434,7 @@ async function batchQuery(waybills, queryFn, maxConcurrent) {
 
         const queryPromises = batch.map(async (waybill) => {
             try {
-                const result = await queryFn(waybill);
+                const result = await fetchStatus(waybill, token);
                 return { waybill, success: true, result };
             } catch (error) {
                 return { waybill, success: false, error: error.message };
@@ -437,9 +522,10 @@ async function main() {
             return;
         }
 
-        // 第二步：批量并发查询状态
+        // 第二步：获取或刷新妈妈驿站 Token 并批量并发查询状态
+        const token = await getMamaToken();
         const { activePackages, failed, signedCount } = await batchQuery(
-            waybills, fetchStatus, CONFIG.QUERY_API.MAX_CONCURRENT
+            waybills, token, CONFIG.QUERY_API.MAX_CONCURRENT
         );
 
         // 第三步：构造分组通知
