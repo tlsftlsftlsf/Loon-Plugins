@@ -70,6 +70,22 @@
 
 ---
 
+### 5. 快递100凭据自动捕获 (`Kuaidi100_Capture.plugin`)
+
+自动捕获**快递100**（`kuaidihelp.com`）面单记录（`getWaybillRecord`）与物流查询（`getStatusByWaybillNo`）请求中的 `ts`、`sign`、`Cookie` 以及完整 `Headers`，自动持久化存储至 Loon 本地存储，支持系统弹窗通知及 Bark 推送。
+
+#### 订阅链接
+* **Loon 插件链接 (GitHub Raw)**：
+  ```text
+  https://raw.githubusercontent.com/tlsftlsftlsf/Loon-Plugins/main/Plugin/Kuaidi100_Capture.plugin
+  ```
+* **国内加速链接 (jsDelivr)**：
+  ```text
+  https://fastly.jsdelivr.net/gh/tlsftlsftlsf/Loon-Plugins@main/Plugin/Kuaidi100_Capture.plugin
+  ```
+
+---
+
 ## 规则分流 (Rule-Set) 列表
 
 如果你希望通过 Loon、Surge 或 Shadowrocket 的规则集形式引用：
