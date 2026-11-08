@@ -1,13 +1,17 @@
-#!name = 快递100凭据自动捕获
-#!desc = 自动捕获快递100 (kuaidihelp.com) 面单记录与物流查询请求的 ts、sign、Cookie 及 Headers 凭据，并保存至持久化存储，支持 Loon 本地通知及 Bark 推送。
+#!name = 快递100凭据捕获与未签收查询
+#!desc = 1. 自动捕获快递100 (kuaidihelp.com) 面单记录请求凭据；2. 定时批量并发查询非中通快递物流状态，智能过滤已签收包裹，分组推送未签收提醒。
 #!openUrl = https://github.com/tlsftlsftlsf/Loon-Plugins
 #!author = tlsftlsftlsf
-#!tag = 快递100, 凭据获取, 抓包
+#!tag = 快递100, 凭据获取, 物流追踪, 快递工具
 #!icon = https://gitlab.com/lodepuly/iconlibrary/-/raw/main/App_icon/120px/KuaiDi100.png
-#!date = 2026-11-08 18:08:00
+#!date = 2026-11-08 18:12:00
 
 [Script]
+# 1. 抓取凭据接口
 http-request ^https?:\/\/api[0-5]?\.kuaidihelp\.com\/.*(getWaybillRecord|getStatusByWaybillNo) script-path=https://raw.githubusercontent.com/tlsftlsftlsf/Loon-Plugins/main/Script/kuaidi100_capture.js, requires-body=true, tag=快递100凭据捕获
+
+# 2. 定时批量查询未签收快递（每天 9:00、14:00、19:00 自动执行，也可在脚本列表手动触发）
+cron "0 9,14,19 * * *" script-path=https://raw.githubusercontent.com/tlsftlsftlsf/Loon-Plugins/main/Script/kuaidi100_track_query.js, timeout=120, tag=快递100未签收查询
 
 [Mitm]
 hostname = api*.kuaidihelp.com, *.kuaidihelp.com

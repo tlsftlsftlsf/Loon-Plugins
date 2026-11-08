@@ -70,9 +70,11 @@
 
 ---
 
-### 5. 快递100凭据自动捕获 (`Kuaidi100_Capture.plugin`)
+### 5. 快递100凭据捕获与未签收查询 (`Kuaidi100_Capture.plugin`)
 
-自动捕获**快递100**（`kuaidihelp.com`）面单记录（`getWaybillRecord`）与物流查询（`getStatusByWaybillNo`）请求中的 `ts`、`sign`、`Cookie` 以及完整 `Headers`，自动持久化存储至 Loon 本地存储，支持系统弹窗通知及 Bark 推送。
+本插件包含两个功能模块：
+1. **自动抓取凭据**：自动捕获**快递100**（`kuaidihelp.com`）面单记录（`getWaybillRecord`）与物流查询（`getStatusByWaybillNo`）请求中的 `ts`、`sign`、`Cookie` 以及完整 `Headers`，自动持久化存储。
+2. **定时查单推送**：每天定时（或在 Loon 中手动点击运行）拉取面单记录，自动跳过中通单号，并发查询妈妈驿站物流轨迹，智能双重判定是否签收，对未签收包裹按状态分组，推送详细通知及 Bark 预警。
 
 #### 订阅链接
 * **Loon 插件链接 (GitHub Raw)**：
