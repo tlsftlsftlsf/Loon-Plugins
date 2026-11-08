@@ -6,6 +6,7 @@
 // ====== 配置项 ======
 const BARK_KEY = "BApQ6cMJmhpRwiWGQJmJJj"; // 可选：Bark 设备 Key (若不需要 Bark 可设为空字符串)
 const ENABLE_BARK = true;                  // 是否启用 Bark 推送
+const BARK_GROUP = "快递相关";              // Bark 消息分组
 const ENABLE_LOON_NOTIFY = true;           // 是否启用 Loon 本地通知
 
 // 目标API配置
@@ -92,7 +93,7 @@ function sendBark(title, content, copyText, callback) {
     const postData = {
         title: title,
         body: content,
-        group: "快递100",
+        group: BARK_GROUP,
         copy: copyText || "",
         icon: "https://gitlab.com/lodepuly/iconlibrary/-/raw/main/App_icon/120px/KuaiDi100.png"
     };

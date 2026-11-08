@@ -12,7 +12,7 @@ if (typeof $notify === "undefined") {
 // ====== 推送与通知配置 ======
 const BARK_KEY = "BApQ6cMJmhpRwiWGQJmJJj"; // Bark 设备 Key
 const ENABLE_BARK = true;                  // 是否启用 Bark 推送
-const BARK_GROUP = "中通监控";              // Bark 消息分组
+const BARK_GROUP = "快递相关";              // Bark 消息分组 (统一设置为快递相关)
 const BARK_TTL = 600;                      // 消息缓存时间(秒)
 const ENABLE_LOON_NOTIFY = false;          // 是否启用 Loon 本地通知 (默认关闭)
 

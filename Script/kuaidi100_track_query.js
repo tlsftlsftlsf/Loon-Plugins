@@ -19,7 +19,7 @@ const CONFIG = {
     BARK: {
         ENABLE: true,
         KEY: "BApQ6cMJmhpRwiWGQJmJJj", // Bark 设备 Key (留空则不推送)
-        GROUP: "快递100未签收"
+        GROUP: "快递相关"
     },
     // 签收判定关键词（用于 API 返回的 status 以及 desc/remark 字段二次兜底）
     SIGNED_KEYWORDS: [
